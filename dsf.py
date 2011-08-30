@@ -23,7 +23,7 @@ class XTC_iter:
     Each iteration yields a dictionary 
     {'N': number of atoms,
      'box': simulation box as 3 row vectors (nm),
-     'x': xyz data as Nx3 array (nm),
+     'x': xyz data as 3xN array (nm),
      'step': simulation step,
      'time': simulation time (ps) 
     """
@@ -205,7 +205,8 @@ if __name__ == '__main__':
     b2 = (2*np.pi)*cr(a3,a1)/vol
     b3 = (2*np.pi)*cr(a1,a2)/vol
     Nk = options.nk
-    kline = ((1.0/Nk)*np.arange(float(Nk))).reshape((1,1,Nk))
+#    kline = ((1.0/Nk)*np.arange(float(Nk))).reshape((1,1,Nk))
+    kline = (np.arange(float(Nk))).reshape((1,1,Nk))
 
     if options.verbose:
         print('N = %i --> delta_x = %f [nm]' % (Nk, nr(a1)/Nk))
