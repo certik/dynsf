@@ -27,7 +27,7 @@ class XTC_iter:
      'step': simulation step,
      'time': simulation time (ps) 
     """
-    def __init__(self, fn):
+    def __init__(self, fn, max_frames=-1):
         if libgmx is None:
             raise RuntimeError("No libgmx found!")
 
@@ -45,6 +45,8 @@ class XTC_iter:
         self._bOK =    c_int()  # gmx_bool equals int
         self._first_done = False
         self._open = True
+        self._frame_counter = 0
+        self.max_frames = max_frames
 
     def _get_first(self):
         # Read first frame, update state of object
@@ -88,8 +90,9 @@ class XTC_iter:
             self._open = False
         
     def next(self):
-        if not self._open:
+        if self.max_frames == self._frame_counter or not self._open:
             raise StopIteration
+        self._frame_counter += 1
 
         if not self._first_done:
             self._get_first()
@@ -147,10 +150,13 @@ if __name__ == '__main__':
     parser.add_option('','--tc', metavar='CORR_TIME', type='float',
                       help='Correlation time (ps) to consider.')
     parser.add_option('','--nc', metavar='CORR_STEPS', type='int',
-                      help='Number of correlation steps to consider.')
+                      help='Number of time correlation steps to consider.')
     parser.add_option('','--nk', metavar='KPOINTS', type='int',
                       default=50,
                       help='Number of discrete spatial points')
+    parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
+                      default=-1,
+                      help='Read no more than NFRAMES frames from trajectory file')
     parser.add_option('-v', '--verbose', action='store_true', 
                       default=False,
                       help='Verbose output')
@@ -204,6 +210,11 @@ if __name__ == '__main__':
     b1 = (2*np.pi)*cr(a2,a3)/vol
     b2 = (2*np.pi)*cr(a3,a1)/vol
     b3 = (2*np.pi)*cr(a1,a2)/vol
+    # Temporary ugly...
+    b2 = b2 * (np.linalg.norm(b1)/np.linalg.norm(b2))
+    b3 = b3 * (np.linalg.norm(b1)/np.linalg.norm(b3))
+    delta_k = np.linalg.norm(b1)
+    #
     Nk = options.nk
 #    kline = ((1.0/Nk)*np.arange(float(Nk))).reshape((1,1,Nk))
     kline = (np.arange(float(Nk))).reshape((1,1,Nk))
@@ -218,16 +229,16 @@ if __name__ == '__main__':
         F_k_ts.append(averager(np.zeros(Nk), N_tc))
 
 
-    def extend_rho_k(frame):
+    def extend_with_rho_k(frame):
         N = frame['N']
         x = frame['x'].reshape((3,N,1), order='F')
         frame['rho_ks'] = [
-            np.sum(np.exp(1j*np.sum(x*k, axis=0)), axis=0) for k in kvals]
+            (1.0/np.sqrt(N))*np.sum(np.exp(1j*np.sum(x*k, axis=0)), axis=0) for k in kvals]
         return frame
 
-    traj = XTC_iter(options.f)
+    traj = XTC_iter(options.f, max_frames=options.max_frames)
     try:
-        frame_list = cyclic_list([extend_rho_k(traj.next()) 
+        frame_list = cyclic_list([extend_with_rho_k(traj.next()) 
                                   for x in range(N_tc)])
     except StopIteration:
         print('Failed to read %i frames (minimum required) from %s' % \
@@ -242,7 +253,7 @@ if __name__ == '__main__':
     
     f_index = 0
     for frame in traj:
-        frame_list[f_index+N_tc] = extend_rho_k(frame)
+        frame_list[f_index+N_tc] = extend_with_rho_k(frame)
         if options.verbose: print(frame['step'])
 
         for i in range(N_tc):
