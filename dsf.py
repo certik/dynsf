@@ -2,7 +2,7 @@
 
 from ctypes import cdll, byref, c_int, c_float, POINTER
 from ctypes.util import find_library
-from itertools import count
+from itertools import takewhile
 
 import numpy as np
 
@@ -211,9 +211,8 @@ if __name__ == '__main__':
         N_tc = 1 + int(ceil(options.tc/delta_t))
         N_tc += N_tc%2
     elif options.nc:
-        assert(options.nc >= 0)
-        N_tc = 1 + options.nc
-        N_tc += N_tc%2
+        assert(options.nc >= 1)
+        N_tc = options.nc
     else:
         N_tc = 1
 
@@ -239,8 +238,8 @@ if __name__ == '__main__':
     b2 = b2 * (np.linalg.norm(b1)/np.linalg.norm(b2))
     b3 = b3 * (np.linalg.norm(b1)/np.linalg.norm(b3))
     delta_k = np.linalg.norm(b1)
-    #
     Nk = options.nk
+    max_k = delta_k*Nk
     if options.verbose:
         print('N = %i --> delta_x = %f [nm]' % (Nk, nr(a1)/Nk))
 
@@ -250,12 +249,14 @@ if __name__ == '__main__':
 
     kvals = \
         b1 * np.arange(Nk, dtype=np.float64).reshape((1,Nk,1,1)) + \
-        b2 * np.arange(Nk, dtype=np.float64).reshape((1,1,Nk,1)) #+ \
-#        b3 * np.arange(Nk, dtype=np.float64).reshape((1,1,1,Nk))
-    kvals = kvals.reshape((3,kvals.size/3),order='F')
+        b2 * np.arange(Nk, dtype=np.float64).reshape((1,1,Nk,1)) + \
+        b3 * np.arange(Nk, dtype=np.float64).reshape((1,1,1,Nk))
+    kvals = kvals.reshape((3, kvals.size/3)).transpose()
     kdist = np.sqrt(np.sum(kvals**2, axis=1))
-    t = sorted(zip(kdist, kvals))
-    
+    I = np.nonzero(kdist<=max_k)[0]
+    I = I[kdist[I].argsort()]
+    kdist = kdist[I]
+    kvals = kvals[I,].transpose()
 
     def add_rho_k(frame):
         frame['rho_k'] = calc_rho_k(frame['x'], kvals)
@@ -264,7 +265,6 @@ if __name__ == '__main__':
     traj = XTC_iter(options.f, max_frames=options.max_frames)
     try:
         frame_list = cyclic_list([add_rho_k(traj.next()) for x in range(N_tc)])
-        
     except StopIteration:
         print('Failed to read %i frames (minimum required) from %s' % \
                   (N_tc, options.f))
@@ -276,11 +276,10 @@ if __name__ == '__main__':
     # * Assert box is square
 
     
-    f_index = 0
     F_k_t_av = averager(np.zeros(len(kdist)), N_tc)
 
-    for frame, f_index in zip(traj, count(0)):
-        frame_list[f_index+N_tc] = add_rho_k(frame)
+    for f_index, frame in enumerate(traj):
+        frame_list[f_index+N_tc-1] = add_rho_k(frame)
         if options.verbose: print(frame['step'])
 
         rho_k_0 = frame_list[f_index]['rho_k']
@@ -288,8 +287,23 @@ if __name__ == '__main__':
             rho_k_i = frame_list[f_index+i]['rho_k']
             F_k_t_av.add(np.real(rho_k_0*rho_k_i.conjugate()), i)
                 
-    F_k_t = np.array([F_k_t_av.get_av(i) for i in range(N_tc)]).transpose()
+    F_k_t_full = np.array([F_k_t_av.get_av(i) for i in range(N_tc)])
 
-            
-
-
+    # dirty smooth it out
+    pts = 2*Nk
+    rng = (-delta_k/4, max_k+delta_k/4) 
+    Npoints, edges = np.histogram(kdist, bins=pts, range=rng)
+    F_k_t = np.zeros((N_tc, pts))
+    F_k_t_sd = np.zeros((N_tc, pts))
+    k = 0.5*(edges[1:]+edges[:-1])
+    t = delta_t*np.arange(N_tc)
+    
+    ci = 0
+    for i, n in enumerate(Npoints):
+        if n == 0:
+            F_k_t[:,i] = np.NaN
+            continue
+        s = F_k_t_full[:,ci:ci+n]
+        F_k_t[:,i] = np.mean(s, axis=1)
+        F_k_t_sd[:,i] = np.std(s, axis=1)
+        ci += n
