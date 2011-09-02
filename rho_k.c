@@ -7,9 +7,13 @@ void rho_k(RHOPREC x_vec[][3], int N_x,
 	   RHOPREC rho_k[][2]){
 
   int x_i, k_i;
-  RHOPREC alpha;
+  RHOPREC alpha, factor;
 
-#pragma omp parallel for shared(rho_k,x_vec,k_vec) private(k_i,x_i,alpha)
+  factor = (1.0/sqrt((RHOPREC)N_x));
+
+#pragma omp parallel for \
+  shared(rho_k, x_vec, k_vec, factor) \
+  private(k_i, x_i, alpha)
   for(k_i=0; k_i<N_k; k_i++){
     rho_k[k_i][0] = 0.0;
     rho_k[k_i][1] = 0.0;
@@ -21,5 +25,8 @@ void rho_k(RHOPREC x_vec[][3], int N_x,
       rho_k[k_i][0] += cos(alpha);
       rho_k[k_i][1] += sin(alpha);
     }
+    rho_k[k_i][0] *= factor;
+    rho_k[k_i][1] *= factor;
   }   
 }
+

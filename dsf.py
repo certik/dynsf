@@ -2,19 +2,10 @@
 
 from ctypes import cdll, byref, c_int, c_float, POINTER
 from ctypes.util import find_library
-from itertools import takewhile
+from itertools import takewhile, count
 
 import numpy as np
-
-#
-#class Frame:
-#    def __init__(self, x, box, step, time):
-#        pass
-#    
-# Frame : box array[3,3], positions [array[3,Ni]]
-#
-#
-#
+import re
 
 
 lname = find_library('gmx')
@@ -59,13 +50,15 @@ if libgmx:
 class XTC_reader:
     """Iterable object
 
+    Iterate through the frames of an xtc-file.
+    Each frame is represented as a dictionary.
     {'N': number of atoms,
      'box': simulation box as 3 row vectors (nm),
      'x': xyz data as 3xN array (nm),
      'step': simulation step,
      'time': simulation time (ps) }
     """
-    def __init__(self, file_name, max_frames=-1, type_indexes=None):
+    def __init__(self, file_name, max_frames=-1, index_file=None):
         if libgmx is None:
             raise RuntimeError("No libgmx found, can't read xtc-file")
         
@@ -81,14 +74,33 @@ class XTC_reader:
         self._x =      None
         self._prec =   ct_xtcfloat()
         self._bOK =    c_int()  # gmx_bool equals int
-        self._first_called = False
         self._open = True
+        self._first_called = False
         self._frame_counter = 0
         self.max_frames = max_frames
+
+        self.index_file = index_file
+
         
+    def _setup_indexes(self):
+        # This requires the knowledge of the number of atoms, N.
+        # Hence, it cannot be called until after the first frame is read.
+        N = self._natoms.value
+        if self.index_file:
+            self.types = []
+            self.indexes = []
+            for t, I in read_ndx_file(self.index_file):
+                if I[0]<0 and I[-1]>=N:
+                    raise RuntimeError('Invalid index found in index file')
+                self.types.append(t)
+                self.indexes.append(I)
+        else:
+            self.types = ['all']
+            self.indexes = [np.arange(N)]
+
     def _get_first(self):
-        # Read first frame, update state of self
-        _xfirst = POINTER(ct_xtcfloat)() # typedef real rvec[DIM];
+        # Read first frame, update state of self, create indexes etc
+        _xfirst = POINTER(ct_xtcfloat)()
         res = libgmx.read_first_xtc(self._fio, self._natoms, 
                                     self._step, self._time, 
                                     self._box, _xfirst,
@@ -100,8 +112,10 @@ class XTC_reader:
             raise IOError("corrupt frame in xtc-file?")
 
         N = self._natoms.value
-        self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N)),
+        self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N), order='F'),
                              np_xtcfloat, ['F_CONTIGUOUS', 'ALIGNED'])
+        
+        self._setup_indexes()
     
     def _get_next(self):
         # get next frame, update state of self
@@ -135,13 +149,34 @@ class XTC_reader:
                 self.close()
                 raise StopIteration
             
+        xs = [self._x[:,I] for I in self.indexes]
         return {'N' : self._natoms.value,
                 'box' : self._box.copy('F'),
-                'x' : self._x.copy('F'),
                 'step' : self._step.value,
-                'time' : self._time.value
+                'time' : self._time.value,
+                'xs' : xs
                 }
 
+
+
+def read_ndx_file(file_name):
+    section_re = re.compile(r'^ *\[ *([a-zA-Z0-9_.-]+) *\] *$')
+    sections = []
+    members = []
+    name = None
+    with open(file_name, 'r') as f:
+        for L in f:
+            m = section_re.match(L)
+            if m:
+                if members and name:
+                    sections.append((name, np.unique(np.array(members))-1))
+                name = m.group(1)
+                members = []
+            elif not L.isspace():
+                members += map(int, L.split())
+        if members and name:
+            sections.append((name, np.array(list(set(members)))-1))
+    return sections
 
 
 
@@ -152,7 +187,7 @@ class cyclic_list(list):
         return super(cyclic_list, self).__setitem__(key%len(self),val)
     def __getslice__(self,i,j):
         n = len(self)
-        return [self[x%n] for x in range(i,j)]
+        return [self[x] for x in range(i,j)]
 
 
 librho_k = cdll.LoadLibrary('./librho_k.so')
@@ -172,7 +207,7 @@ def calc_rho_k(x, k):
     _, Nk = k.shape
     rho_k = np.zeros((Nk,), dtype=np.complex128, order='F')
     _rho_k(x, Nx, k, Nk, rho_k)
-    return (1.0/np.sqrt(Nx))*rho_k
+    return rho_k
 
 
 
@@ -283,20 +318,22 @@ if __name__ == '__main__':
         b1 * np.arange(Nk, dtype=np.float64).reshape((1,Nk,1,1)) + \
         b2 * np.arange(Nk, dtype=np.float64).reshape((1,1,Nk,1)) + \
         b3 * np.arange(Nk, dtype=np.float64).reshape((1,1,1,Nk))
-    kvals = kvals.reshape((3, kvals.size/3)).transpose()
-    kdist = np.sqrt(np.sum(kvals**2, axis=1))
+    kvals = kvals.reshape((3, kvals.size/3))
+    kdist = np.sqrt(np.sum(kvals**2, axis=0))
     I = np.nonzero(kdist<=max_k)[0]
     I = I[kdist[I].argsort()]
     kdist = kdist[I]
-    kvals = kvals[I,].transpose()
+    kvals = kvals[:,I]
 
-    def add_rho_k(frame):
-        frame['rho_k'] = calc_rho_k(frame['x'], kvals)
+    def add_rho_ks(frame):
+        frame['rho_ks'] = [calc_rho_k(x, kvals) for x in frame['xs']]
         return frame
 
-    traj = XTC_reader(options.f, max_frames=options.max_frames)
+    traj = XTC_reader(options.f, 
+                      max_frames=options.max_frames,
+                      index_file=options.n)
     try:
-        frame_list = cyclic_list([add_rho_k(traj.next()) for x in range(N_tc)])
+        frame_list = cyclic_list([add_rho_ks(traj.next()) for x in range(N_tc)])
     except StopIteration:
         print('Failed to read %i frames (minimum required) from %s' % \
                   (N_tc, options.f))
@@ -307,35 +344,42 @@ if __name__ == '__main__':
     # * Handle none cubic box in a good way
     # * Assert box is square
 
-    
-    F_k_t_av = averager(np.zeros(len(kdist)), N_tc)
+    Ntypes = len(traj.types)
+    m = count(0)
+    mij_list = [(m.next(),i,j) for i in range(Ntypes) for j in range(i,Ntypes)]
+    type_combos = [traj.types[i]+'-'+traj.types[j] for _, i, j in mij_list]
 
-    for f_index, frame in enumerate(traj):
-        frame_list[f_index+N_tc-1] = add_rho_k(frame)
+    F_k_t_avs = [averager(np.zeros(len(kdist)), N_tc) for _ in mij_list]
+
+    for frame_i, frame in enumerate(traj):
+        frame_list[frame_i+N_tc-1] = add_rho_ks(frame)
         if options.verbose: print(frame['step'])
 
-        rho_k_0 = frame_list[f_index]['rho_k']
-        for i in range(N_tc):
-            rho_k_i = frame_list[f_index+i]['rho_k']
-            F_k_t_av.add(np.real(rho_k_0*rho_k_i.conjugate()), i)
+        rho_k_0 = frame_list[frame_i]['rho_ks']
+        for time_i in range(N_tc):
+            rho_k_i = frame_list[frame_i+time_i]['rho_ks']
+            for m, i, j in mij_list:
+                F_k_t_avs[m].add(np.real(rho_k_0[i]*rho_k_i[j].conjugate()), time_i)
                 
-    F_k_t_full = np.array([F_k_t_av.get_av(i) for i in range(N_tc)])
+    F_k_t_full = [np.array([F_k_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
+                  for m, _, _ in mij_list]
 
     # dirty smooth it out
     pts = 2*Nk
     rng = (-delta_k/4, max_k+delta_k/4) 
     Npoints, edges = np.histogram(kdist, bins=pts, range=rng)
-    F_k_t = np.zeros((N_tc, pts))
-    F_k_t_sd = np.zeros((N_tc, pts))
+    F_k_t = [np.zeros((N_tc, pts)) for _ in mij_list]
+    F_k_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
     k = 0.5*(edges[1:]+edges[:-1])
     t = delta_t*np.arange(N_tc)
     
-    ci = 0
-    for i, n in enumerate(Npoints):
-        if n == 0:
-            F_k_t[:,i] = np.NaN
-            continue
-        s = F_k_t_full[:,ci:ci+n]
-        F_k_t[:,i] = np.mean(s, axis=1)
-        F_k_t_sd[:,i] = np.std(s, axis=1)
-        ci += n
+    for m,_,_ in mij_list:
+        ci = 0
+        for i, n in enumerate(Npoints):
+            if n == 0:
+                F_k_t[m][:,i] = np.NaN
+                continue
+            s = F_k_t_full[m][:,ci:ci+n]
+            F_k_t[m][:,i] = np.mean(s, axis=1)
+            F_k_t_sd[m][:,i] = np.std(s, axis=1)
+            ci += n
