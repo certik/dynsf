@@ -6,82 +6,115 @@ from itertools import takewhile
 
 import numpy as np
 
-
-lname = find_library('gmx')
-libgmx = lname and cdll.LoadLibrary(lname)
-libgmx.open_xtc.restype = POINTER(c_int)
-
 #
 #class Frame:
 #    def __init__(self, x, box, step, time):
 #        pass
 #    
+# Frame : box array[3,3], positions [array[3,Ni]]
+#
+#
+#
 
-class XTC_iter:
-    """Iterate through an xtc-file
 
-    Allows iteration through an xtc file, frame by frame.
-    Each iteration yields a dictionary 
+lname = find_library('gmx')
+libgmx = lname and cdll.LoadLibrary(lname)
+if libgmx: 
+    # single prec gmx-real equals float, right?
+    np_xtcfloat = np.float32
+    ct_xtcfloat = c_float
+
+    # t_fileio *open_xtc(const char *filename,const char *mode);
+    # /* Open a file for xdr I/O */
+    libgmx.open_xtc.restype = POINTER(c_int)
+
+    # int read_first_xtc(t_fileio *fio,
+    #                           int *natoms,int *step,real *time,
+    #                           matrix box,rvec **x,real *prec,gmx_bool *bOK);
+    # /* Open xtc file, read xtc file first time, allocate memory for x */
+    libgmx.read_first_xtc.restype = c_int
+    libgmx.read_first_xtc.argtypes = [
+        POINTER(c_int), POINTER(c_int), 
+        POINTER(c_int), POINTER(ct_xtcfloat), 
+        np.ctypeslib.ndpointer(dtype=np_xtcfloat, shape=(3,3), 
+                               flags='f_contiguous, aligned'),
+        POINTER(POINTER(ct_xtcfloat)),
+        POINTER(ct_xtcfloat), POINTER(c_int)]
+    
+    # int read_next_xtc(t_fileio *fio,
+    #                          int natoms,int *step,real *time,
+    #                          matrix box,rvec *x,real *prec,gmx_bool *bOK);
+    # /* Read subsequent frames */
+    libgmx.read_next_xtc.restype = c_int
+    libgmx.read_next_xtc.argtypes = [
+        POINTER(c_int), c_int,
+        POINTER(c_int), POINTER(ct_xtcfloat), 
+        np.ctypeslib.ndpointer(dtype=np_xtcfloat, shape=(3,3), 
+                               flags='f_contiguous, aligned'),
+        np.ctypeslib.ndpointer(dtype=np_xtcfloat, ndim=2, 
+                               flags='f_contiguous, aligned'),
+        POINTER(ct_xtcfloat), POINTER(c_int)]
+    
+
+class XTC_reader:
+    """Iterable object
+
     {'N': number of atoms,
      'box': simulation box as 3 row vectors (nm),
      'x': xyz data as 3xN array (nm),
      'step': simulation step,
-     'time': simulation time (ps) 
+     'time': simulation time (ps) }
     """
-    def __init__(self, fn, max_frames=-1):
+    def __init__(self, file_name, max_frames=-1, type_indexes=None):
         if libgmx is None:
-            raise RuntimeError("No libgmx found!")
-
-        self._fio = libgmx.open_xtc(fn, 'r')
+            raise RuntimeError("No libgmx found, can't read xtc-file")
+        
+        self._fio = libgmx.open_xtc(file_name, 'r')
         if not self._fio:
-            raise IOError("blah, failed to open %s" % fn)
+            raise IOError("Failed to open file %s (for some reason)" % file_name)
 
-        # single prec gmx-real equals float, right?
         self._natoms = c_int()
         self._step =   c_int()
-        self._time =   c_float()
-        self._box =    (c_float*9)() # typedef real matrix[DIM][DIM];
-        self._x =      POINTER(c_float)() # typedef real rvec[DIM];
-        self._prec =   c_float()
+        self._time =   ct_xtcfloat()
+        self._box =    np.require(np.zeros((3,3)),
+                                  np_xtcfloat, ['F_CONTIGUOUS', 'ALIGNED'])
+        self._x =      None
+        self._prec =   ct_xtcfloat()
         self._bOK =    c_int()  # gmx_bool equals int
-        self._first_done = False
+        self._first_called = False
         self._open = True
         self._frame_counter = 0
         self.max_frames = max_frames
-
+        
     def _get_first(self):
-        # Read first frame, update state of object
-        res = libgmx.read_first_xtc(self._fio, 
-                                    byref(self._natoms), 
-                                    byref(self._step), 
-                                    byref(self._time), 
-                                    byref(self._box), 
-                                    byref(self._x), 
-                                    byref(self._prec), 
-                                    byref(self._bOK))
-        self._first_done = True
+        # Read first frame, update state of self
+        _xfirst = POINTER(ct_xtcfloat)() # typedef real rvec[DIM];
+        res = libgmx.read_first_xtc(self._fio, self._natoms, 
+                                    self._step, self._time, 
+                                    self._box, _xfirst,
+                                    self._prec, self._bOK)
+        self._first_called = True
         if not res:
             raise IOError("read_first_xtc failed")
         if not self._bOK.value:
             raise IOError("corrupt frame in xtc-file?")
-        return True
+
+        N = self._natoms.value
+        self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N)),
+                             np_xtcfloat, ['F_CONTIGUOUS', 'ALIGNED'])
     
     def _get_next(self):
-        # Try to read the next frame, update state of object
-        res = libgmx.read_next_xtc(self._fio, 
-                                   self._natoms.value, 
-                                   byref(self._step), 
-                                   byref(self._time), 
-                                   byref(self._box), 
-                                   self._x,
-                                   byref(self._prec), 
-                                   byref(self._bOK))
+        # get next frame, update state of self
+        res = libgmx.read_next_xtc(self._fio, self._natoms.value, 
+                                   self._step, self._time,
+                                   self._box, self._x,
+                                   self._prec, self._bOK)
         if not res:
             return False
         if not self._bOK.value:
             raise IOError("corrupt frame in xtc-file?")
         return True
-    
+        
     def __iter__(self):
         return self
     
@@ -95,19 +128,20 @@ class XTC_iter:
             raise StopIteration
         self._frame_counter += 1
 
-        if not self._first_done:
+        if not self._first_called:
             self._get_first()
         else:
             if not self._get_next():
                 self.close()
                 raise StopIteration
             
-        N = self._natoms.value
-        return {'N' : N,
-                'box' : np.array(self._box[0:9]).reshape((3,3), order='F'),
-                'x' : np.array(self._x[0:3*N]).reshape((3,N), order='F'), 
+        return {'N' : self._natoms.value,
+                'box' : self._box.copy('F'),
+                'x' : self._x.copy('F'),
                 'step' : self._step.value,
-                'time' : self._time.value}
+                'time' : self._time.value
+                }
+
 
 
 
@@ -141,8 +175,6 @@ def calc_rho_k(x, k):
     return (1.0/np.sqrt(Nx))*rho_k
 
 
-def weighted_average(x,y):
-    pass
 
 
 class averager:
@@ -195,7 +227,7 @@ if __name__ == '__main__':
         print('Options --tc and --nc are mutuly exclusive')
         sys.exit(1)
 
-    traj = XTC_iter(options.f)
+    traj = XTC_reader(options.f)
     f0 = traj.next()
     reference_box = f0['box']
     f1 = traj.next()
@@ -262,7 +294,7 @@ if __name__ == '__main__':
         frame['rho_k'] = calc_rho_k(frame['x'], kvals)
         return frame
 
-    traj = XTC_iter(options.f, max_frames=options.max_frames)
+    traj = XTC_reader(options.f, max_frames=options.max_frames)
     try:
         frame_list = cyclic_list([add_rho_k(traj.next()) for x in range(N_tc)])
     except StopIteration:
