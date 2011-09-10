@@ -1,0 +1,17 @@
+# hur rakna ut Nk / Nk{1..3}, k_max 
+
+dki = 2 pi / ai
+dK = 8 pi^3 / V
+K = Nk1 Nk2 Nk3 dK
+
+dx = 0.01 nm?  10th of 1 Å 
+
+N(k) ~ k^3
+ki_max samma i alla riktningar
+ki_min olika, beroende pa xi_max
+"Nk per k" rimligt konstant (rimligt?)
+Beskar ki vektorn innan skapandet av kvecs (eller?)
+Hitta brytpunkten k*, formulera densitet och sannolikhet
+
+b1,b2,b3 = 2*np.pi*np.linalg.inv(A.transpose())
+

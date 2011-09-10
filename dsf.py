@@ -12,39 +12,40 @@ lname = find_library('gmx')
 libgmx = lname and cdll.LoadLibrary(lname)
 if libgmx: 
     # single prec gmx-real equals float, right?
-    np_xtcfloat = np.float32
-    ct_xtcfloat = c_float
+    xtcfloat_np = np.float32
+    xtcfloat_ct = c_float
+    xtcint_ct = c_int
 
     # t_fileio *open_xtc(const char *filename,const char *mode);
     # /* Open a file for xdr I/O */
-    libgmx.open_xtc.restype = POINTER(c_int)
+    libgmx.open_xtc.restype = POINTER(xtcint_ct)
 
     # int read_first_xtc(t_fileio *fio,
     #                           int *natoms,int *step,real *time,
     #                           matrix box,rvec **x,real *prec,gmx_bool *bOK);
     # /* Open xtc file, read xtc file first time, allocate memory for x */
-    libgmx.read_first_xtc.restype = c_int
+    libgmx.read_first_xtc.restype = xtcint_ct
     libgmx.read_first_xtc.argtypes = [
-        POINTER(c_int), POINTER(c_int), 
-        POINTER(c_int), POINTER(ct_xtcfloat), 
-        np.ctypeslib.ndpointer(dtype=np_xtcfloat, shape=(3,3), 
+        POINTER(xtcint_ct), POINTER(xtcint_ct), 
+        POINTER(xtcint_ct), POINTER(xtcfloat_ct), 
+        np.ctypeslib.ndpointer(dtype=xtcfloat_np, shape=(3,3), 
                                flags='f_contiguous, aligned'),
-        POINTER(POINTER(ct_xtcfloat)),
-        POINTER(ct_xtcfloat), POINTER(c_int)]
+        POINTER(POINTER(xtcfloat_ct)),
+        POINTER(xtcfloat_ct), POINTER(xtcint_ct)]
     
     # int read_next_xtc(t_fileio *fio,
     #                          int natoms,int *step,real *time,
     #                          matrix box,rvec *x,real *prec,gmx_bool *bOK);
     # /* Read subsequent frames */
-    libgmx.read_next_xtc.restype = c_int
+    libgmx.read_next_xtc.restype = xtcint_ct
     libgmx.read_next_xtc.argtypes = [
-        POINTER(c_int), c_int,
-        POINTER(c_int), POINTER(ct_xtcfloat), 
-        np.ctypeslib.ndpointer(dtype=np_xtcfloat, shape=(3,3), 
+        POINTER(xtcint_ct), xtcint_ct,
+        POINTER(xtcint_ct), POINTER(xtcfloat_ct), 
+        np.ctypeslib.ndpointer(dtype=xtcfloat_np, shape=(3,3), 
                                flags='f_contiguous, aligned'),
-        np.ctypeslib.ndpointer(dtype=np_xtcfloat, ndim=2, 
+        np.ctypeslib.ndpointer(dtype=xtcfloat_np, ndim=2, 
                                flags='f_contiguous, aligned'),
-        POINTER(ct_xtcfloat), POINTER(c_int)]
+        POINTER(xtcfloat_ct), POINTER(xtcint_ct)]
     
 
 class XTC_reader:
@@ -66,14 +67,14 @@ class XTC_reader:
         if not self._fio:
             raise IOError("Failed to open file %s (for some reason)" % file_name)
 
-        self._natoms = c_int()
-        self._step =   c_int()
-        self._time =   ct_xtcfloat()
+        self._natoms = xtcint_ct()
+        self._step =   xtcint_ct()
+        self._time =   xtcfloat_ct()
         self._box =    np.require(np.zeros((3,3)),
-                                  np_xtcfloat, ['F_CONTIGUOUS', 'ALIGNED'])
+                                  xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
         self._x =      None
-        self._prec =   ct_xtcfloat()
-        self._bOK =    c_int()  # gmx_bool equals int
+        self._prec =   xtcfloat_ct()
+        self._bOK =    xtcint_ct()  # gmx_bool equals int
         self._open = True
         self._first_called = False
         self._frame_counter = 0
@@ -90,7 +91,7 @@ class XTC_reader:
             self.types = []
             self.indexes = []
             for t, I in read_ndx_file(self.index_file):
-                if I[0]<0 and I[-1]>=N:
+                if I[0]<0 or I[-1]>=N:
                     raise RuntimeError('Invalid index found in index file')
                 self.types.append(t)
                 self.indexes.append(I)
@@ -100,7 +101,7 @@ class XTC_reader:
 
     def _get_first(self):
         # Read first frame, update state of self, create indexes etc
-        _xfirst = POINTER(ct_xtcfloat)()
+        _xfirst = POINTER(xtcfloat_ct)()
         res = libgmx.read_first_xtc(self._fio, self._natoms, 
                                     self._step, self._time, 
                                     self._box, _xfirst,
@@ -113,7 +114,7 @@ class XTC_reader:
 
         N = self._natoms.value
         self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N), order='F'),
-                             np_xtcfloat, ['F_CONTIGUOUS', 'ALIGNED'])
+                             xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
         
         self._setup_indexes()
     
@@ -160,6 +161,7 @@ class XTC_reader:
 
 
 def read_ndx_file(file_name):
+    # Read an ini-style gromacs index file
     section_re = re.compile(r'^ *\[ *([a-zA-Z0-9_.-]+) *\] *$')
     sections = []
     members = []
@@ -175,7 +177,7 @@ def read_ndx_file(file_name):
             elif not L.isspace():
                 members += map(int, L.split())
         if members and name:
-            sections.append((name, np.array(list(set(members)))-1))
+            sections.append((name, np.unique(np.array(members))-1))
     return sections
 
 
@@ -226,6 +228,64 @@ class averager:
         assert n > 0
         f = 1.0/n
         return f*self._data[slot]
+
+class reciprocal:
+    def __init__(self, box, N_max=-1, k_max=1.0/0.1):
+        """
+
+        k_max should be in crystallographic inverse length (no 2*pi factor)
+        """
+        assert N_max == -1 or N_max > 30
+
+        self.k_max = k_max
+        self.N_max = N_max
+        self.A = box.copy()
+        # B is the "crystallographic" reciprocal vectors
+        self.B = np.linalg.inv(self.A.transpose())
+
+        k_mins = np.array([np.linalg.norm(b) for b in self.B])
+        k_vol = np.prod(k_mins)
+        self.k_mins = k_mins
+        self.k_vol = k_vol
+
+        if N_max == -1 or N_max > np.pi*k_max**3/(6*k_vol):
+            # Do not deselect k-points
+            self.k_prune = None
+        else:
+            # Use Cardano's formula to find k_prune
+            p = -3.0*k_max**2/4
+            q = 3.0*N_max*k_vol/np.pi - k_max**3/4
+            D = (p/3)**3 + (q/2)**2
+            #assert D < 0.0
+            u = (-q/2+np.sqrt(D+0j))**(1.0/3)
+            v = (-q/2-np.sqrt(D+0j))**(1.0/3)
+            x = -(u+v)/2 - 1j*(u-v)*np.sqrt(3)/2
+            self.k_prune = np.real(x) + k_max/2
+
+        b1, b2, b3 = [(2*np.pi)*x.reshape((3,1,1,1)) for x in self.B]
+        Nk1, Nk2, Nk3 = [np.ceil(k_max/dk) for dk in k_mins]
+        kvals = \
+            b1 * np.arange(Nk1, dtype=np.float64).reshape((1,Nk1,1,1)) + \
+            b2 * np.arange(Nk2, dtype=np.float64).reshape((1,1,Nk2,1)) + \
+            b3 * np.arange(Nk3, dtype=np.float64).reshape((1,1,1,Nk3))
+        kvals = kvals.reshape((3, kvals.size/3))
+        kdist = np.sqrt(np.sum(kvals**2, axis=0))*(1.0/(2*np.pi))
+        I = np.nonzero(kdist<=k_max)[0]
+        I = I[kdist[I].argsort()]
+        kdist = kdist[I]
+        kvals = kvals[:,I]
+        if not self.k_prune is None:
+            N = len(kdist)
+            p = np.ones(N)
+            # N(k) = a k^3
+            # N'(k) = 3a k^2
+            p[1:] = (self.k_prune/kdist[1:])**2
+            I = np.nonzero(p > np.random.rand(N))[0]
+            kdist = kdist[I]
+            kvals = kvals[:,I]
+        self.kvals = kvals
+        self.kdist = kdist
+
 
 if __name__ == '__main__':
     import sys
@@ -294,21 +354,16 @@ if __name__ == '__main__':
         print('Simulation box = \n%s' % str(reference_box))
 
     a1, a2, a3 = reference_box
-    nr = np.linalg.norm
-    cr = np.cross
-    vol = abs(np.dot(cr(a1,a2),a3))
-    assert abs(vol - nr(a1)*nr(a2)*nr(a3)) <= np.finfo(vol).eps
-    b1 = (2*np.pi)*cr(a2,a3)/vol
-    b2 = (2*np.pi)*cr(a3,a1)/vol
-    b3 = (2*np.pi)*cr(a1,a2)/vol
-    # Temporary ugly...
-    b2 = b2 * (np.linalg.norm(b1)/np.linalg.norm(b2))
-    b3 = b3 * (np.linalg.norm(b1)/np.linalg.norm(b3))
+    b1, b2, b3 = 2*np.pi*np.linalg.inv(reference_box.transpose())
+
+    ## Temporary ugly...
+    #b2 = b2 * (np.linalg.norm(b1)/np.linalg.norm(b2))
+    #b3 = b3 * (np.linalg.norm(b1)/np.linalg.norm(b3))
     delta_k = np.linalg.norm(b1)
     Nk = options.nk
     max_k = delta_k*Nk
     if options.verbose:
-        print('N = %i --> delta_x = %f [nm]' % (Nk, nr(a1)/Nk))
+        print('N = %i --> delta_x = %f [nm]' % (Nk, np.linalg.norm(a1)/Nk))
 
     b1 = b1.reshape((3,1,1,1))
     b2 = b2.reshape((3,1,1,1))
@@ -324,6 +379,11 @@ if __name__ == '__main__':
     I = I[kdist[I].argsort()]
     kdist = kdist[I]
     kvals = kvals[:,I]
+
+    for N in [100,1000,10000,100000,1000000]:
+        r = reciprocal(reference_box, N_max=N, k_max=10)
+        print(r.k_prune, r.k_max, N, len(r.kdist))
+
 
     def add_rho_ks(frame):
         frame['rho_ks'] = [calc_rho_k(x, kvals) for x in frame['xs']]
