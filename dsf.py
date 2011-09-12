@@ -1,185 +1,10 @@
 #!/usr/bin/env python
-
-from ctypes import cdll, byref, c_int, c_float, POINTER
-from ctypes.util import find_library
-from itertools import takewhile, count
-
-import numpy as np
+from itertools import takewhile, count, islice
 import re
+import numpy as np
 
-
-lname = find_library('gmx')
-libgmx = lname and cdll.LoadLibrary(lname)
-if libgmx: 
-    # single prec gmx-real equals float, right?
-    xtcfloat_np = np.float32
-    xtcfloat_ct = c_float
-    xtcint_ct = c_int
-
-    # t_fileio *open_xtc(const char *filename,const char *mode);
-    # /* Open a file for xdr I/O */
-    libgmx.open_xtc.restype = POINTER(xtcint_ct)
-
-    # int read_first_xtc(t_fileio *fio,
-    #                           int *natoms,int *step,real *time,
-    #                           matrix box,rvec **x,real *prec,gmx_bool *bOK);
-    # /* Open xtc file, read xtc file first time, allocate memory for x */
-    libgmx.read_first_xtc.restype = xtcint_ct
-    libgmx.read_first_xtc.argtypes = [
-        POINTER(xtcint_ct), POINTER(xtcint_ct), 
-        POINTER(xtcint_ct), POINTER(xtcfloat_ct), 
-        np.ctypeslib.ndpointer(dtype=xtcfloat_np, shape=(3,3), 
-                               flags='f_contiguous, aligned'),
-        POINTER(POINTER(xtcfloat_ct)),
-        POINTER(xtcfloat_ct), POINTER(xtcint_ct)]
-    
-    # int read_next_xtc(t_fileio *fio,
-    #                          int natoms,int *step,real *time,
-    #                          matrix box,rvec *x,real *prec,gmx_bool *bOK);
-    # /* Read subsequent frames */
-    libgmx.read_next_xtc.restype = xtcint_ct
-    libgmx.read_next_xtc.argtypes = [
-        POINTER(xtcint_ct), xtcint_ct,
-        POINTER(xtcint_ct), POINTER(xtcfloat_ct), 
-        np.ctypeslib.ndpointer(dtype=xtcfloat_np, shape=(3,3), 
-                               flags='f_contiguous, aligned'),
-        np.ctypeslib.ndpointer(dtype=xtcfloat_np, ndim=2, 
-                               flags='f_contiguous, aligned'),
-        POINTER(xtcfloat_ct), POINTER(xtcint_ct)]
-    
-
-class XTC_reader:
-    """Iterable object
-
-    Iterate through the frames of an xtc-file.
-    Each frame is represented as a dictionary.
-    {'N': number of atoms,
-     'box': simulation box as 3 row vectors (nm),
-     'x': xyz data as 3xN array (nm),
-     'step': simulation step,
-     'time': simulation time (ps) }
-    """
-    def __init__(self, file_name, max_frames=-1, index_file=None):
-        if libgmx is None:
-            raise RuntimeError("No libgmx found, can't read xtc-file")
-        
-        self._fio = libgmx.open_xtc(file_name, 'r')
-        if not self._fio:
-            raise IOError("Failed to open file %s (for some reason)" % file_name)
-
-        self._natoms = xtcint_ct()
-        self._step =   xtcint_ct()
-        self._time =   xtcfloat_ct()
-        self._box =    np.require(np.zeros((3,3)),
-                                  xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
-        self._x =      None
-        self._prec =   xtcfloat_ct()
-        self._bOK =    xtcint_ct()  # gmx_bool equals int
-        self._open = True
-        self._first_called = False
-        self._frame_counter = 0
-        self.max_frames = max_frames
-
-        self.index_file = index_file
-
-        
-    def _setup_indexes(self):
-        # This requires the knowledge of the number of atoms, N.
-        # Hence, it cannot be called until after the first frame is read.
-        N = self._natoms.value
-        if self.index_file:
-            self.types = []
-            self.indexes = []
-            for t, I in read_ndx_file(self.index_file):
-                if I[0]<0 or I[-1]>=N:
-                    raise RuntimeError('Invalid index found in index file')
-                self.types.append(t)
-                self.indexes.append(I)
-        else:
-            self.types = ['all']
-            self.indexes = [np.arange(N)]
-
-    def _get_first(self):
-        # Read first frame, update state of self, create indexes etc
-        _xfirst = POINTER(xtcfloat_ct)()
-        res = libgmx.read_first_xtc(self._fio, self._natoms, 
-                                    self._step, self._time, 
-                                    self._box, _xfirst,
-                                    self._prec, self._bOK)
-        self._first_called = True
-        if not res:
-            raise IOError("read_first_xtc failed")
-        if not self._bOK.value:
-            raise IOError("corrupt frame in xtc-file?")
-
-        N = self._natoms.value
-        self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N), order='F'),
-                             xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
-        
-        self._setup_indexes()
-    
-    def _get_next(self):
-        # get next frame, update state of self
-        res = libgmx.read_next_xtc(self._fio, self._natoms.value, 
-                                   self._step, self._time,
-                                   self._box, self._x,
-                                   self._prec, self._bOK)
-        if not res:
-            return False
-        if not self._bOK.value:
-            raise IOError("corrupt frame in xtc-file?")
-        return True
-        
-    def __iter__(self):
-        return self
-    
-    def close(self):
-        if self._open:
-            libgmx.close_xtc(self._fio)
-            self._open = False
-        
-    def next(self):
-        if self.max_frames == self._frame_counter or not self._open:
-            raise StopIteration
-        self._frame_counter += 1
-
-        if not self._first_called:
-            self._get_first()
-        else:
-            if not self._get_next():
-                self.close()
-                raise StopIteration
-            
-        xs = [self._x[:,I] for I in self.indexes]
-        return {'N' : self._natoms.value,
-                'box' : self._box.copy('F'),
-                'step' : self._step.value,
-                'time' : self._time.value,
-                'xs' : xs
-                }
-
-
-
-def read_ndx_file(file_name):
-    # Read an ini-style gromacs index file
-    section_re = re.compile(r'^ *\[ *([a-zA-Z0-9_.-]+) *\] *$')
-    sections = []
-    members = []
-    name = None
-    with open(file_name, 'r') as f:
-        for L in f:
-            m = section_re.match(L)
-            if m:
-                if members and name:
-                    sections.append((name, np.unique(np.array(members))-1))
-                name = m.group(1)
-                members = []
-            elif not L.isspace():
-                members += map(int, L.split())
-        if members and name:
-            sections.append((name, np.unique(np.array(members))-1))
-    return sections
-
+from traj_io import XTC_reader, TRJ_reader
+from rho_j_k import calc_rho_k, calc_rho_j_k
 
 
 class cyclic_list(list):
@@ -191,28 +16,20 @@ class cyclic_list(list):
         n = len(self)
         return [self[x] for x in range(i,j)]
 
+class curry:
+    def __init__(self, fun, *args, **kwargs):
+        self.fun = fun
+        self.pending = args[:]
+        self.kwargs = kwargs.copy()
 
-librho_k = cdll.LoadLibrary('./librho_k.so')
-_rho_k = librho_k.rho_k
-_rho_k.argtypes = [np.ctypeslib.ndpointer(dtype=np.float64, ndim=2, 
-                                          flags='f_contiguous, aligned'),
-                   c_int, 
-                   np.ctypeslib.ndpointer(dtype=np.float64, ndim=2, 
-                                          flags='f_contiguous, aligned'),
-                   c_int,
-                   np.ctypeslib.ndpointer(dtype=np.complex128, ndim=1, 
-                                          flags='f_contiguous, aligned, writeable')]
-def calc_rho_k(x, k):
-    x = np.require(x, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    k = np.require(k, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    _, Nx = x.shape
-    _, Nk = k.shape
-    rho_k = np.zeros((Nk,), dtype=np.complex128, order='F')
-    _rho_k(x, Nx, k, Nk, rho_k)
-    return rho_k
+    def __call__(self, *args, **kwargs):
+        if kwargs and self.kwargs:
+            kw = self.kwargs.copy()
+            kw.update(kwargs)
+        else:
+            kw = kwargs or self.kwargs
 
-
-
+        return self.fun(*(self.pending + args), **kw)
 
 class averager:
     def __init__(self, init_array, N_slots):
@@ -231,11 +48,17 @@ class averager:
 
 class reciprocal:
     def __init__(self, box, N_max=-1, k_max=1.0/0.1):
-        """
+        """Create a suitable set of reciprocal coordinates
 
-        k_max should be in crystallographic inverse length (no 2*pi factor)
+        Optionally limit the set to approximately N_max points by
+        randomly removing points. The points are removed in such a way
+        that for k>k_prune, the points will be radially uniformely 
+        distributed (the value of k_prune is calculated from k_max, N_max,
+        and the shape of the box). 
+
+        k_max should be the "crystallographic reciprocal length" (no 2*pi factor)
         """
-        assert N_max == -1 or N_max > 30
+        assert(N_max == -1 or N_max > 1000)
 
         self.k_max = k_max
         self.N_max = N_max
@@ -293,8 +116,8 @@ if __name__ == '__main__':
     from math import ceil
 
     parser = optparse.OptionParser()
-    parser.add_option('-f', '', metavar='XTC_FILE',
-                      help='Trajectory file in xtc format')
+    parser.add_option('-f', '', metavar='TRAJECTORY_FILE',
+                      help='Trajectory file in xtc or lammps-dump format')
     parser.add_option('-n', '', metavar='INDEX_FILE',
                       help='Index file (Gromacs style) for specifying '
                       'atom types. If none is given, all atoms will be '
@@ -303,11 +126,14 @@ if __name__ == '__main__':
                       help='Correlation time (ps) to consider.')
     parser.add_option('','--nc', metavar='CORR_STEPS', type='int',
                       help='Number of time correlation steps to consider.')
-    parser.add_option('','--nk', metavar='KPOINTS', type='int',
-                      default=20,
-                      help='Number of discrete spatial points')
+    parser.add_option('','--Nk', metavar='KPOINTS', type='int',
+                      default=20000,
+                      help='Approximate maximum number of k points sampled. '
+                      'KPOINTS=-1 implies no limit.')
+    parser.add_option('','--k-max', metavar='KMAX', type='float', default=50,
+                      help='Largest inverse length to consider (in nm^-1)')
     parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
-                      default=-1,
+                      default=0,
                       help='Read no more than NFRAMES frames from trajectory file')
     parser.add_option('-v', '--verbose', action='store_true', 
                       default=False,
@@ -322,7 +148,20 @@ if __name__ == '__main__':
         print('Options --tc and --nc are mutuly exclusive')
         sys.exit(1)
 
-    traj = XTC_reader(options.f)
+    if options.f is None:
+        print('A trajectory must be specified with option -f')
+        sys.exit(1)
+
+    if options.f.endswith('.xtc'):
+        trajectory_reader = XTC_reader
+    elif re.match(r'^.+\.trj(\.(gz|bz2))?$',options.f):
+        trajectory_reader = curry(TRJ_reader,
+                                  x_factor=0.1, t_factor=0.001)
+    else:
+        print('Unknown trajectory format')
+        sys.exit(1)
+
+    traj = trajectory_reader(options.f)
     f0 = traj.next()
     reference_box = f0['box']
     f1 = traj.next()
@@ -353,47 +192,26 @@ if __name__ == '__main__':
     if options.verbose:
         print('Simulation box = \n%s' % str(reference_box))
 
-    a1, a2, a3 = reference_box
-    b1, b2, b3 = 2*np.pi*np.linalg.inv(reference_box.transpose())
-
-    ## Temporary ugly...
-    #b2 = b2 * (np.linalg.norm(b1)/np.linalg.norm(b2))
-    #b3 = b3 * (np.linalg.norm(b1)/np.linalg.norm(b3))
-    delta_k = np.linalg.norm(b1)
-    Nk = options.nk
-    max_k = delta_k*Nk
+    rec = reciprocal(reference_box, N_max=options.Nk, k_max=options.k_max)
+                     
     if options.verbose:
-        print('N = %i --> delta_x = %f [nm]' % (Nk, np.linalg.norm(a1)/Nk))
-
-    b1 = b1.reshape((3,1,1,1))
-    b2 = b2.reshape((3,1,1,1))
-    b3 = b3.reshape((3,1,1,1))
-
-    kvals = \
-        b1 * np.arange(Nk, dtype=np.float64).reshape((1,Nk,1,1)) + \
-        b2 * np.arange(Nk, dtype=np.float64).reshape((1,1,Nk,1)) + \
-        b3 * np.arange(Nk, dtype=np.float64).reshape((1,1,1,Nk))
-    kvals = kvals.reshape((3, kvals.size/3))
-    kdist = np.sqrt(np.sum(kvals**2, axis=0))
-    I = np.nonzero(kdist<=max_k)[0]
-    I = I[kdist[I].argsort()]
-    kdist = kdist[I]
-    kvals = kvals[:,I]
-
-    for N in [100,1000,10000,100000,1000000]:
-        r = reciprocal(reference_box, N_max=N, k_max=10)
-        print(r.k_prune, r.k_max, N, len(r.kdist))
+        print('Nk points = %i' % len(rec.kdist))
+        print('k_max = %f --> x_min = %f' % (options.k_max, 1.0/options.k_max))
 
 
     def add_rho_ks(frame):
-        frame['rho_ks'] = [calc_rho_k(x, kvals) for x in frame['xs']]
+        frame['rho_ks'] = [calc_rho_k(x, rec.kvals) for x in frame['xs']]
         return frame
 
-    traj = XTC_reader(options.f, 
-                      max_frames=options.max_frames,
-                      index_file=options.n)
+    
+    traj = trajectory_reader(options.f, index_file=options.n)
+    if options.max_frames > 0:
+        itraj = islice(traj, options.max_frames)
+    else:
+        itraj = traj
+
     try:
-        frame_list = cyclic_list([add_rho_ks(traj.next()) for x in range(N_tc)])
+        frame_list = cyclic_list([add_rho_ks(itraj.next()) for x in range(N_tc)])
     except StopIteration:
         print('Failed to read %i frames (minimum required) from %s' % \
                   (N_tc, options.f))
@@ -401,17 +219,15 @@ if __name__ == '__main__':
 
     # * Assert box is not changed during consecutive frames
     # * Handle different time steps?
-    # * Handle none cubic box in a good way
-    # * Assert box is square
 
     Ntypes = len(traj.types)
     m = count(0)
     mij_list = [(m.next(),i,j) for i in range(Ntypes) for j in range(i,Ntypes)]
     type_combos = [traj.types[i]+'-'+traj.types[j] for _, i, j in mij_list]
 
-    F_k_t_avs = [averager(np.zeros(len(kdist)), N_tc) for _ in mij_list]
+    F_k_t_avs = [averager(np.zeros(len(rec.kdist)), N_tc) for _ in mij_list]
 
-    for frame_i, frame in enumerate(traj):
+    for frame_i, frame in enumerate(itraj):
         frame_list[frame_i+N_tc-1] = add_rho_ks(frame)
         if options.verbose: print(frame['step'])
 
@@ -425,9 +241,11 @@ if __name__ == '__main__':
                   for m, _, _ in mij_list]
 
     # dirty smooth it out
-    pts = 2*Nk
+    pts = 100
+    delta_k = rec.kdist[1]
+    max_k = options.k_max
     rng = (-delta_k/4, max_k+delta_k/4) 
-    Npoints, edges = np.histogram(kdist, bins=pts, range=rng)
+    Npoints, edges = np.histogram(rec.kdist, bins=pts, range=rng)
     F_k_t = [np.zeros((N_tc, pts)) for _ in mij_list]
     F_k_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
     k = 0.5*(edges[1:]+edges[:-1])

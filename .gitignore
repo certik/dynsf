@@ -1,6 +1,9 @@
 *.pyc
 *.xtc
 *.ndx
+*.trj
+*.trj.gz
+*.trj.bz2
 *.so
 *.png
 *.pdf
