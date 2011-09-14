@@ -1,6 +1,8 @@
 #!/usr/bin/env python
-from itertools import takewhile, count, islice
+
+from itertools import count, islice
 import re
+import sys
 import numpy as np
 
 from traj_io import XTC_reader, TRJ_reader
@@ -47,62 +49,62 @@ class averager:
         return f*self._data[slot]
 
 class reciprocal:
-    def __init__(self, box, N_max=-1, k_max=1.0/0.1):
+    def __init__(self, box, N_max=-1, q_max=1.0/0.1):
         """Create a suitable set of reciprocal coordinates
 
         Optionally limit the set to approximately N_max points by
         randomly removing points. The points are removed in such a way
-        that for k>k_prune, the points will be radially uniformely 
-        distributed (the value of k_prune is calculated from k_max, N_max,
+        that for q>q_prune, the points will be radially uniformely 
+        distributed (the value of q_prune is calculated from q_max, N_max,
         and the shape of the box). 
 
-        k_max should be the "crystallographic reciprocal length" (no 2*pi factor)
+        q_max should be the "crystallographic reciprocal length" (no 2*pi factor)
         """
         assert(N_max == -1 or N_max > 1000)
 
-        self.k_max = k_max
+        self.q_max = q_max
         self.N_max = N_max
         self.A = box.copy()
         # B is the "crystallographic" reciprocal vectors
         self.B = np.linalg.inv(self.A.transpose())
 
-        k_mins = np.array([np.linalg.norm(b) for b in self.B])
-        k_vol = np.prod(k_mins)
-        self.k_mins = k_mins
-        self.k_vol = k_vol
+        q_mins = np.array([np.linalg.norm(b) for b in self.B])
+        q_vol = np.prod(q_mins)
+        self.q_mins = q_mins
+        self.q_vol = q_vol
 
-        if N_max == -1 or N_max > np.pi*k_max**3/(6*k_vol):
+        if N_max == -1 or N_max > np.pi*q_max**3/(6*q_vol):
             # Do not deselect k-points
-            self.k_prune = None
+            self.q_prune = None
         else:
-            # Use Cardano's formula to find k_prune
-            p = -3.0*k_max**2/4
-            q = 3.0*N_max*k_vol/np.pi - k_max**3/4
+            # Use Cardano's formula to find q_prune
+            p = -3.0*q_max**2/4
+            q = 3.0*N_max*q_vol/np.pi - q_max**3/4
             D = (p/3)**3 + (q/2)**2
             #assert D < 0.0
             u = (-q/2+np.sqrt(D+0j))**(1.0/3)
             v = (-q/2-np.sqrt(D+0j))**(1.0/3)
             x = -(u+v)/2 - 1j*(u-v)*np.sqrt(3)/2
-            self.k_prune = np.real(x) + k_max/2
+            self.q_prune = np.real(x) + q_max/2
 
         b1, b2, b3 = [(2*np.pi)*x.reshape((3,1,1,1)) for x in self.B]
-        Nk1, Nk2, Nk3 = [np.ceil(k_max/dk) for dk in k_mins]
+        Nk1, Nk2, Nk3 = [np.ceil(q_max/dk) for dk in q_mins]
         kvals = \
             b1 * np.arange(Nk1, dtype=np.float64).reshape((1,Nk1,1,1)) + \
             b2 * np.arange(Nk2, dtype=np.float64).reshape((1,1,Nk2,1)) + \
             b3 * np.arange(Nk3, dtype=np.float64).reshape((1,1,1,Nk3))
         kvals = kvals.reshape((3, kvals.size/3))
         kdist = np.sqrt(np.sum(kvals**2, axis=0))*(1.0/(2*np.pi))
-        I = np.nonzero(kdist<=k_max)[0]
+        I = np.nonzero(kdist<=q_max)[0]
         I = I[kdist[I].argsort()]
-        kdist = kdist[I]
-        kvals = kvals[:,I]
-        if not self.k_prune is None:
+        kdist = kdist[I[1:]]
+        kvals = kvals[:,I[1:]]
+        if not self.q_prune is None:
             N = len(kdist)
             p = np.ones(N)
             # N(k) = a k^3
             # N'(k) = 3a k^2
-            p[1:] = (self.k_prune/kdist[1:])**2
+            p = (self.q_prune/kdist)**2
             I = np.nonzero(p > np.random.rand(N))[0]
             kdist = kdist[I]
             kvals = kvals[:,I]
@@ -126,15 +128,20 @@ if __name__ == '__main__':
                       help='Correlation time (ps) to consider.')
     parser.add_option('','--nc', metavar='CORR_STEPS', type='int',
                       help='Number of time correlation steps to consider.')
-    parser.add_option('','--Nk', metavar='KPOINTS', type='int',
+    parser.add_option('','--Nq', metavar='QPOINTS', type='int',
                       default=20000,
-                      help='Approximate maximum number of k points sampled. '
-                      'KPOINTS=-1 implies no limit.')
-    parser.add_option('','--k-max', metavar='KMAX', type='float', default=50,
+                      help='Approximate maximum number of q points sampled. '
+                      'QPOINTS=-1 implies no limit.')
+    parser.add_option('','--q-max', metavar='KMAX', type='float', default=50,
                       help='Largest inverse length to consider (in nm^-1)')
     parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
                       default=0,
                       help='Read no more than NFRAMES frames from trajectory file')
+    parser.add_option('','--step', metavar='NSTEP', type='int', default=1,
+                      help='Only use every (NSTEP)th trajectory frame. '
+                      'Default NSTEP is 1.')
+    parser.add_option('','--stride', metavar='NSTRIDE', type='int', default=1,
+                      help='Stride NSTRIDE frames inbetween nc.')
     parser.add_option('-v', '--verbose', action='store_true', 
                       default=False,
                       help='Verbose output')
@@ -192,11 +199,11 @@ if __name__ == '__main__':
     if options.verbose:
         print('Simulation box = \n%s' % str(reference_box))
 
-    rec = reciprocal(reference_box, N_max=options.Nk, k_max=options.k_max)
+    rec = reciprocal(reference_box, N_max=options.Nq, q_max=options.q_max)
                      
     if options.verbose:
-        print('Nk points = %i' % len(rec.kdist))
-        print('k_max = %f --> x_min = %f' % (options.k_max, 1.0/options.k_max))
+        print('Nq points = %i' % len(rec.kdist))
+        print('q_max = %f --> x_min = %f' % (options.q_max, 1.0/options.q_max))
 
 
     def add_rho_ks(frame):
@@ -206,7 +213,7 @@ if __name__ == '__main__':
     
     traj = trajectory_reader(options.f, index_file=options.n)
     if options.max_frames > 0:
-        itraj = islice(traj, options.max_frames)
+        itraj = islice(traj, 0, options.max_frames, options.step)
     else:
         itraj = traj
 
@@ -225,29 +232,31 @@ if __name__ == '__main__':
     mij_list = [(m.next(),i,j) for i in range(Ntypes) for j in range(i,Ntypes)]
     type_combos = [traj.types[i]+'-'+traj.types[j] for _, i, j in mij_list]
 
-    F_k_t_avs = [averager(np.zeros(len(rec.kdist)), N_tc) for _ in mij_list]
+    F_q_t_avs = [averager(np.zeros(len(rec.kdist)), N_tc) for _ in mij_list]
 
     for frame_i, frame in enumerate(itraj):
         frame_list[frame_i+N_tc-1] = add_rho_ks(frame)
-        if options.verbose: print(frame['step'])
+        if options.verbose: 
+            sys.stdout.write("%04i - %f\r"%(frame_i, frame['time']))
+            sys.stdout.flush()
 
-        rho_k_0 = frame_list[frame_i]['rho_ks']
+        rho_q_0 = frame_list[frame_i]['rho_ks']
         for time_i in range(N_tc):
-            rho_k_i = frame_list[frame_i+time_i]['rho_ks']
+            rho_q_i = frame_list[frame_i+time_i]['rho_ks']
             for m, i, j in mij_list:
-                F_k_t_avs[m].add(np.real(rho_k_0[i]*rho_k_i[j].conjugate()), time_i)
+                F_q_t_avs[m].add(np.real(rho_q_0[i]*rho_q_i[j].conjugate()), time_i)
                 
-    F_k_t_full = [np.array([F_k_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
+    F_q_t_full = [np.array([F_q_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
                   for m, _, _ in mij_list]
 
     # dirty smooth it out
     pts = 100
     delta_k = rec.kdist[1]
-    max_k = options.k_max
+    max_k = options.q_max
     rng = (-delta_k/4, max_k+delta_k/4) 
     Npoints, edges = np.histogram(rec.kdist, bins=pts, range=rng)
-    F_k_t = [np.zeros((N_tc, pts)) for _ in mij_list]
-    F_k_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
+    F_q_t = [np.zeros((N_tc, pts)) for _ in mij_list]
+    F_q_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
     k = 0.5*(edges[1:]+edges[:-1])
     t = delta_t*np.arange(N_tc)
     
@@ -255,9 +264,9 @@ if __name__ == '__main__':
         ci = 0
         for i, n in enumerate(Npoints):
             if n == 0:
-                F_k_t[m][:,i] = np.NaN
+                F_q_t[m][:,i] = np.NaN
                 continue
-            s = F_k_t_full[m][:,ci:ci+n]
-            F_k_t[m][:,i] = np.mean(s, axis=1)
-            F_k_t_sd[m][:,i] = np.std(s, axis=1)
+            s = F_q_t_full[m][:,ci:ci+n]
+            F_q_t[m][:,i] = np.mean(s, axis=1)
+            F_q_t_sd[m][:,i] = np.std(s, axis=1)
             ci += n
