@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from itertools import count, islice
+from collections import deque
 import re
 import sys
 import numpy as np
@@ -8,15 +9,20 @@ import numpy as np
 from traj_io import XTC_reader, TRJ_reader
 from rho_j_k import calc_rho_k, calc_rho_j_k
 
+def consume(iterator, n):
+    "Advance the iterator n-steps ahead. If n is none, consume entirely."
+    # From the python.org
+    if n is None:
+        collections.deque(iterator, maxlen=0)
+    else:
+        next(islice(iterator, n, n), None)
 
-class cyclic_list(list):
-    def __getitem__(self,key):
-        return super(cyclic_list, self).__getitem__(key%len(self))
-    def __setitem__(self,key,val):
-        return super(cyclic_list, self).__setitem__(key%len(self),val)
-    def __getslice__(self,i,j):
-        n = len(self)
-        return [self[x] for x in range(i,j)]
+def npopleft(deq, n):
+    if len(deq) >= n:
+        for _ in range(n):
+            deq.popleft()
+    else:
+        deq.clear()
 
 class curry:
     def __init__(self, fun, *args, **kwargs):
@@ -211,18 +217,25 @@ if __name__ == '__main__':
         return frame
 
     
+    assert options.stride > 0
+    N_s = options.stride
+
     traj = trajectory_reader(options.f, index_file=options.n)
+    itraj = traj
+    if options.step > 1:
+        pass
     if options.max_frames > 0:
-        itraj = islice(traj, 0, options.max_frames, options.step)
-    else:
-        itraj = traj
+        itraj = islice(itraj, options.max_frames)
 
     try:
-        frame_list = cyclic_list([add_rho_ks(itraj.next()) for x in range(N_tc)])
+        frame_list = deque(islice(itraj, N_tc), N_tc)
     except StopIteration:
         print('Failed to read %i frames (minimum required) from %s' % \
                   (N_tc, options.f))
         sys.exit(1)
+
+    for i, f in enumerate(frame_list):
+        frame_list[i] = add_rho_ks(f)
 
     # * Assert box is not changed during consecutive frames
     # * Handle different time steps?
@@ -234,17 +247,26 @@ if __name__ == '__main__':
 
     F_q_t_avs = [averager(np.zeros(len(rec.kdist)), N_tc) for _ in mij_list]
 
-    for frame_i, frame in enumerate(itraj):
-        frame_list[frame_i+N_tc-1] = add_rho_ks(frame)
-        if options.verbose: 
-            sys.stdout.write("%04i - %f\r"%(frame_i, frame['time']))
-            sys.stdout.flush()
-
-        rho_q_0 = frame_list[frame_i]['rho_ks']
-        for time_i in range(N_tc):
-            rho_q_i = frame_list[frame_i+time_i]['rho_ks']
+    while len(frame_list) > 0:
+        rho_q_0 = frame_list[0]['rho_ks']
+        for time_i, frame in enumerate(frame_list):
+            rho_q_i = frame['rho_ks']
             for m, i, j in mij_list:
                 F_q_t_avs[m].add(np.real(rho_q_0[i]*rho_q_i[j].conjugate()), time_i)
+        
+        # Explicitly pop frames to ensure proper stride to next frame_list[0] 
+        npopleft(frame_list, N_s)
+        
+        # Skip a few trajectory frames if N_s > N_tc
+        consume(itraj, max((0, N_s-N_tc)))
+
+        for f in islice(itraj, min((N_tc, N_s))):
+            if options.verbose: 
+                sys.stdout.write("Adding time: %f\r" % f['time'])
+                sys.stdout.flush()
+            frame_list.append(add_rho_ks(f))
+
+
                 
     F_q_t_full = [np.array([F_q_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
                   for m, _, _ in mij_list]

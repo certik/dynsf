@@ -139,6 +139,8 @@ class XTC_reader:
             self._open = False
         
     def next(self):
+        if not self._open:
+            raise StopIteration
         if not self._first_called:
             self._get_first()
         else:
@@ -169,6 +171,7 @@ class TRJ_reader:
         else:
             CFile = open
         self._fh = CFile(filename, 'r')
+        self._open = True
         self.index_file = index_file
         self._item_re = \
             re.compile(r'^ITEM: (TIMESTEP|NUMBER OF ATOMS|BOX BOUNDS|ATOMS) ?(.*)$')
@@ -213,6 +216,8 @@ class TRJ_reader:
             m = self._item_re.match(L)
             if not m:
                 if L == '':
+                    self._fh.close()
+                    self._open = False
                     raise StopIteration
                 if L.strip() == '':
                     continue
@@ -291,6 +296,9 @@ class TRJ_reader:
         pass
 
     def next(self):
+        if not self._open:
+            raise StopIteration
+
         if not self._first_called:
             self._get_first()
         else:
