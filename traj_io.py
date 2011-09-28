@@ -1,5 +1,5 @@
 
-__all__ = ['XTC_reader', 'TRJ_reader', 'read_ndx_file']
+__all__ = ['trajectory_iterator', 'XTC_reader', 'TRJ_reader', 'read_ndx_file']
 
 from ctypes import cdll, byref, c_int, c_float, POINTER
 from ctypes.util import find_library
@@ -7,6 +7,42 @@ from itertools import islice
 
 import numpy as np
 import re
+import sys
+
+class curry:
+    def __init__(self, fun, *args, **kwargs):
+        self.fun = fun
+        self.pending = args[:]
+        self.kwargs = kwargs.copy()
+
+    def __call__(self, *args, **kwargs):
+        if kwargs and self.kwargs:
+            kw = self.kwargs.copy()
+            kw.update(kwargs)
+        else:
+            kw = kwargs or self.kwargs
+
+        return self.fun(*(self.pending + args), **kw)
+
+def trajectory_iterator(filename, index_file=None, step=1, max_frames=0):
+        if filename.endswith('.xtc'):
+            reader = XTC_reader
+        elif re.match(r'^.+\.trj(\.(gz|bz2))?$', filename):
+            reader = curry(TRJ_reader, x_factor=0.1, t_factor=1.0)
+        else:
+            raise RuntimeError('Unknown file format (suffix)')
+
+        i = reader(filename, index_file=index_file)
+
+        assert step > 0
+        assert max_frames >= 0
+        if max_frames == 0: 
+            max_frames = sys.maxint
+        elif step > 1:
+            max_frames = max_frames*step
+        i = islice(i, 0, max_frames, step)
+
+        return i
 
 
 lname = find_library('gmx')
@@ -150,17 +186,17 @@ class XTC_reader:
             
         xs = [self._x[:,I] for I in self.indexes]
         return {'N' : self._natoms.value,
+                'types' : tuple(self.types),
                 'box' : self._box.copy('F'),
                 'step' : self._step.value,
                 'time' : self._time.value,
                 'xs' : xs,
-                'vs' : None
                 }
 
 
 
 class TRJ_reader:
-    """Read LAMMPS trajectory file
+    """Read LAMMPS trajectory file, naive implementation
     """
     def __init__(self, filename, index_file=None, 
                  x_factor=1.0, t_factor=1.0):
@@ -262,8 +298,11 @@ class TRJ_reader:
         else:
             self._v_I = None
 
-        self._setup_indexes()
-        
+        #if 'type' in cols:
+        #    self._type_I = cols.index('type')
+        #else:
+        #    self._type_I = None
+
         data = np.array([map(float, self._fh.readline().split()) 
                          for _ in range(N)])
         I = np.asarray(data[:,self._id_I], dtype=np.int)-1
@@ -272,6 +311,8 @@ class TRJ_reader:
         if not self._v_I is None:
             self._v = np.zeros((3,N), order='F')
             self._v[:,I] = data[:,self._v_I].transpose()
+
+        self._setup_indexes()
 
     
     def _get_next(self):
@@ -299,23 +340,22 @@ class TRJ_reader:
         if not self._open:
             raise StopIteration
 
-        if not self._first_called:
-            self._get_first()
-        else:
+        if self._first_called:
             self._get_next()
+        else:
+            self._get_first()
             
         xs = [self.x_factor*self._x[:,I] for I in self.indexes]
-        if self._v is None:
-            vs = None
-        else:
-            vs = [self.v_factor*self._v[:,I] for I in self.indexes]
-        return {'N' : int(self._natoms),
-                'box' : self.x_factor*self._box.copy('F'),
-                'step' : int(self._step),
-                'time' : self.t_factor*self._step,
-                'xs' : xs,
-                'vs' : vs
-                }
+        res = {'N' : int(self._natoms),
+               'types' : tuple(self.types),
+               'box' : self.x_factor*self._box.copy('F'),
+               'step' : int(self._step),
+               'time' : self.t_factor*self._step,
+               'xs' : xs }
+        if not self._v is None:
+            res['vs'] = [self.v_factor*self._v[:,I] for I in self.indexes]
+
+        return res
 
 
 

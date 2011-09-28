@@ -6,7 +6,7 @@ import re
 import sys
 import numpy as np
 
-from traj_io import XTC_reader, TRJ_reader
+from traj_io import trajectory_iterator
 from rho_j_q import calc_rho_q, calc_rho_j_q
 
 def consume(iterator, n):
@@ -25,20 +25,6 @@ def npopleft(deq, n):
     else:
         deq.clear()
 
-class curry:
-    def __init__(self, fun, *args, **kwargs):
-        self.fun = fun
-        self.pending = args[:]
-        self.kwargs = kwargs.copy()
-
-    def __call__(self, *args, **kwargs):
-        if kwargs and self.kwargs:
-            kw = self.kwargs.copy()
-            kw.update(kwargs)
-        else:
-            kw = kwargs or self.kwargs
-
-        return self.fun(*(self.pending + args), **kw)
 
 class averager:
     def __init__(self, init_array, N_slots):
@@ -57,7 +43,8 @@ class averager:
 
 class reciprocal:
     def __init__(self, box, N_max=-1, q_max=1.0/0.1):
-        """Create a suitable set of reciprocal coordinates
+        """Create a set of reciprocal coordinates, and calculate rho_q/j_q 
+        for a trajectory frame.
 
         Optionally limit the set to approximately N_max points by
         randomly removing points. The points are removed in such a way
@@ -119,6 +106,23 @@ class reciprocal:
         self.qdist = qdist
         N = len(qdist)
         self.kdirect = kvals / (2.0*np.pi*qdist.reshape((1,N)))
+
+    def process_frame(self, frame, verbose=False):
+        if verbose: 
+            sys.stdout.write("processing frame at time = %f\r" % f['time'])
+            sys.stdout.flush()
+        if 'vs' in frame:
+            rho_qs, j_qs = zip(*[calc_rho_j_q(x, v, self.kvals) 
+                                 for x,v in zip(frame['xs'],frame['vs'])])
+            jz_qs = [np.sum(j*self.kdirect, axis=0) for j in j_qs]
+            frame['j_qs'] = j_qs
+            frame['jz_qs'] = jz_qs
+            frame['jpar_qs'] = [j-(jz*self.kdirect) for j,jz in zip(j_qs, jz_qs)]
+            frame['rho_qs'] = rho_qs
+        else:
+            frame['rho_qs'] = [calc_rho_q(x, self.kvals) for x in frame['xs']]
+        return frame
+
         
 
 if __name__ == '__main__':
@@ -168,20 +172,13 @@ if __name__ == '__main__':
         print('A trajectory must be specified with option -f')
         sys.exit(1)
 
-    if options.f.endswith('.xtc'):
-        trajectory_reader = XTC_reader
-    elif re.match(r'^.+\.trj(\.(gz|bz2))?$',options.f):
-        trajectory_reader = curry(TRJ_reader, x_factor=0.1, t_factor=1.0)
-    else:
-        print('Unknown trajectory format')
-        sys.exit(1)
-
-    assert options.step > 0
-    f0, f1 = islice(trajectory_reader(options.f), 
-                    0, 2*options.step, options.step)
-    reference_box = f0['box']
+    iframe = trajectory_iterator(options.f, step=options.step)
+    
+    f0, f1 = islice(iframe, 2) 
     delta_t = f1['time'] - f0['time']
-    if 'vs' in f0 and not f0['vs'] is None:
+    reference_box = f0['box']
+
+    if 'vs' in f0:
         calculate_current = True
     else:
         calculate_current = False
@@ -217,49 +214,30 @@ if __name__ == '__main__':
         print('Nq points = %i' % len(rec.qdist))
         print('q_max = %f --> x_min = %f' % (options.q_max, 1.0/options.q_max))
 
-
-    def process_frame(frame):
-        if options.verbose: 
-            sys.stdout.write("processing frame at time = %f\r" % f['time'])
-            sys.stdout.flush()
-        if calculate_current:
-            rho_qs, j_qs = zip(*[calc_rho_j_q(x, v, rec.kvals) for x,v in 
-                                 zip(frame['xs'],frame['vs'])])
-            jz_qs = [np.sum(j*rec.kdirect, axis=0) for j in j_qs]
-            frame['jz_qs'] = jz_qs
-            frame['jpar_qs'] = [j-(jz*rec.kdirect) for j,jz in zip(j_qs, jz_qs)]
-            frame['rho_qs'] = rho_qs
-        else:
-            frame['rho_qs'] = [calc_rho_q(x, rec.kvals) for x in frame['xs']]
-        return frame
     
     assert options.stride > 0
-    N_s = options.stride
+    N_stride = options.stride
 
-    traj = trajectory_reader(options.f, index_file=options.n)
-    itraj = traj
-    if options.step > 1:
-        itraj = islice(itraj, 0, sys.maxint, options.step)
-    if options.max_frames > 0:
-        itraj = islice(itraj, options.max_frames)
+    itraj = trajectory_iterator(options.f, index_file=options.n, 
+                                step=options.step, max_frames=options.max_frames)
 
     frame_list = deque(islice(itraj, N_tc), N_tc)
     if len(frame_list) < N_tc:
-        print('Failed to read %i frames (minimum required) from %s' % \
+        raise RuntimeError('Failed to read %i frames (minimum required) from %s' % \
                   (N_tc, options.f))
-        sys.exit(1)
 
     for i, f in enumerate(frame_list):
-        frame_list[i] = process_frame(f)
+        frame_list[i] = rec.process_frame(f, verbose=options.verbose)
 
     # TODO....
     # * Assert box is not changed during consecutive frames
     # * Handle different time steps?
 
-    Ntypes = len(traj.types)
+
     m = count(0)
-    mij_list = [(m.next(),i,j) for i in range(Ntypes) for j in range(i,Ntypes)]
-    type_combos = [traj.types[i]+'-'+traj.types[j] for _, i, j in mij_list]
+    types = frame_list[0]['types']
+    mij_list = [(m.next(),i,j) for i in range(len(types)) for j in range(i,len(types))]
+    type_pairs = [types[i]+'-'+types[j] for _, i, j in mij_list]
 
     F_q_t_avs = [averager(np.zeros(len(rec.qdist)), N_tc) for _ in mij_list]
     if calculate_current:
@@ -276,10 +254,8 @@ if __name__ == '__main__':
                 jz_q_is = frame['jz_qs']
                 jpar_q_is = frame['jpar_qs']
                 for m, i, j in mij_list:
-                    F_q_t_avs[m].add(np.real(rho_q_0s[i] * rho_q_is[j].conjugate()), 
-                                     time_i)
-                    Cl_q_t_avs[m].add(np.real(jz_q_0s[i] * jz_q_is[j].conjugate()), 
-                                     time_i)
+                    F_q_t_avs[m].add(np.real(rho_q_0s[i] * rho_q_is[j].conjugate()), time_i)
+                    Cl_q_t_avs[m].add(np.real(jz_q_0s[i] * jz_q_is[j].conjugate()), time_i)
                     Ct_q_t_avs[m].add(0.5 * np.real(np.sum(jpar_q_0s[i] * \
                                                                jpar_q_is[j].conjugate(),
                                                            axis=0)), 
@@ -289,18 +265,17 @@ if __name__ == '__main__':
             for time_i, frame in enumerate(frame_list):
                 rho_q_is = frame['rho_qs']
                 for m, i, j in mij_list:
-                    F_q_t_avs[m].add(np.real(rho_q_0s[i] * rho_q_is[j].conjugate()), 
-                                     time_i)
+                    F_q_t_avs[m].add(np.real(rho_q_0s[i] * rho_q_is[j].conjugate()), time_i)
         
         # Explicitly pop frames to ensure proper stride to next frame_list[0] 
-        npopleft(frame_list, N_s)
+        npopleft(frame_list, N_stride)
         
-        # Skip N_s-N_t trajectory frames if N_s > N_tc
-        consume(itraj, max((0, N_s-N_tc)))
+        # Skip N_stride-N_tc frames if N_stride > N_tc
+        consume(itraj, max((0, N_stride-N_tc)))
 
-        # Append new frames (as long as there are any) to the deque
-        for f in islice(itraj, min((N_tc, N_s))):
-            frame_list.append(process_frame(f))
+        # Append new frames (if there are any left) to the deque
+        for f in islice(itraj, min((N_tc, N_stride))):
+            frame_list.append(rec.process_frame(f, verbose=options.verbose))
 
 
                 
