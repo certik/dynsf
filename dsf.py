@@ -42,7 +42,7 @@ class averager:
         return f*self._data[slot]
 
 class reciprocal:
-    def __init__(self, box, N_max=-1, q_max=1.0/0.1):
+    def __init__(self, box, N_max=-1, q_max=10.0, debug=False):
         """Create a set of reciprocal coordinates, and calculate rho_q/j_q 
         for a trajectory frame.
 
@@ -61,6 +61,8 @@ class reciprocal:
         self.A = box.copy()
         # B is the "crystallographic" reciprocal vectors
         self.B = np.linalg.inv(self.A.transpose())
+
+        self.debug = debug
 
         q_mins = np.array([np.linalg.norm(b) for b in self.B])
         q_vol = np.prod(q_mins)
@@ -107,8 +109,8 @@ class reciprocal:
         N = len(qdist)
         self.kdirect = kvals / (2.0*np.pi*qdist.reshape((1,N)))
 
-    def process_frame(self, frame, verbose=False):
-        if verbose: 
+    def process_frame(self, frame):
+        if self.debug: 
             sys.stdout.write("processing frame at time = %f\r" % f['time'])
             sys.stdout.flush()
         if 'vs' in frame:
@@ -137,15 +139,18 @@ if __name__ == '__main__':
                       help='Index file (Gromacs style) for specifying '
                       'atom types. If none is given, all atoms will be '
                       'considered identical.')
-    parser.add_option('','--tc', metavar='CORR_TIME', type='float',
-                      help='Correlation time (ps) to consider.')
+#    parser.add_option('','--tc', metavar='CORR_TIME', type='float',
+#                      help='Correlation time (ps) to consider.')
     parser.add_option('','--nc', metavar='CORR_STEPS', type='int',
                       help='Number of time correlation steps to consider.')
     parser.add_option('','--Nq', metavar='QPOINTS', type='int',
                       default=40000,
                       help='Approximate maximum number of q points sampled. '
                       'QPOINTS=-1 implies no limit.')
-    parser.add_option('','--q-max', metavar='KMAX', type='float', default=50,
+    parser.add_option('','--q-bins', metavar='BINS', type='int',
+                      default=80, help='Number of bins used along the q-axis for '
+                      'the final result.')
+    parser.add_option('','--q-max', metavar='KMAX', type='float', default=20,
                       help='Largest inverse length to consider (in nm^-1)')
     parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
                       default=0,
@@ -164,9 +169,9 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit()
 
-    if options.tc and options.nc:
-        print('Options --tc and --nc are mutuly exclusive')
-        sys.exit(1)
+#    if options.tc and options.nc:
+#        print('Options --tc and --nc are mutuly exclusive')
+#        sys.exit(1)
 
     if options.f is None:
         print('A trajectory must be specified with option -f')
@@ -188,11 +193,12 @@ if __name__ == '__main__':
                   (delta_t, 1000.0/delta_t))
 
     
-    if options.tc:
-        assert(options.tc >= 0.0)
-        N_tc = 1 + int(ceil(options.tc/delta_t))
-        N_tc += N_tc%2
-    elif options.nc:
+#    if options.tc:
+#        assert(options.tc >= 0.0)
+#        N_tc = 1 + int(ceil(options.tc/delta_t))
+#        N_tc += N_tc%2
+#    elif options.nc:
+    if options.nc:
         assert(options.nc >= 1)
         N_tc = options.nc
     else:
@@ -208,7 +214,8 @@ if __name__ == '__main__':
     if options.verbose:
         print('Simulation box = \n%s' % str(reference_box))
 
-    rec = reciprocal(reference_box, N_max=options.Nq, q_max=options.q_max)
+    rec = reciprocal(reference_box, N_max=options.Nq, q_max=options.q_max,
+                     debug=options.verbose)
                      
     if options.verbose:
         print('Nq points = %i' % len(rec.qdist))
@@ -227,7 +234,7 @@ if __name__ == '__main__':
                   (N_tc, options.f))
 
     for i, f in enumerate(frame_list):
-        frame_list[i] = rec.process_frame(f, verbose=options.verbose)
+        frame_list[i] = rec.process_frame(f)
 
     # TODO....
     # * Assert box is not changed during consecutive frames
@@ -275,7 +282,7 @@ if __name__ == '__main__':
 
         # Append new frames (if there are any left) to the deque
         for f in islice(itraj, min((N_tc, N_stride))):
-            frame_list.append(rec.process_frame(f, verbose=options.verbose))
+            frame_list.append(rec.process_frame(f))
 
 
                 
@@ -288,7 +295,7 @@ if __name__ == '__main__':
                        for m, _, _ in mij_list]
 
     # naive smooth it out
-    pts = 100
+    pts = options.q_bins
     delta_q = rec.qdist[1]
     max_q = options.q_max
     rng = (-delta_q/4, max_q+delta_q/4) 

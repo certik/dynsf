@@ -277,7 +277,7 @@ class TRJ_reader:
                 cols = tuple(m.group(2).split())
                 # At this point, there should be only atomic data left
                 return (step, natoms, box, cols)
-
+            
     def _get_first(self):
         # Read first frame, update state of self, create indexes etc
         step, N, box, cols = self._read_frame_header()
@@ -286,14 +286,22 @@ class TRJ_reader:
         self._cols = cols        
         self._box = box
 
-        for x in ['id', 'x', 'y', 'z']:
-            if not x in cols:
-                raise RuntimeError('TRJ file must contain at least atom-id, x, y, '
-                                   'and z coordinates to be useful.')
-        self._x_I = np.array(map(cols.index, ('x','y','z')))
+        def _all_in_cols(keys):
+            for k in keys:
+                if not k in cols:
+                    return False
+            return True
+
+        if _all_in_cols(('id','x','y','z')):
+            self._x_I = np.array(map(cols.index, ('x','y','z')))
+        elif _all_in_cols(('id','xu','yu','zu')):
+            self._x_I = np.array(map(cols.index, ('xu','yu','zu')))
+        else:
+            raise RuntimeError('TRJ file must contain at least atom-id, x, y, '
+                               'and z coordinates to be useful.')
         self._id_I = cols.index('id')
 
-        if 'vx' in cols and 'vy' in cols and 'vz' in cols:
+        if _all_in_cols(('vx','vy','vz')):
             self._v_I = np.array(map(cols.index, ('vx','vy','vz')))            
         else:
             self._v_I = None
@@ -352,7 +360,7 @@ class TRJ_reader:
                'step' : int(self._step),
                'time' : self.t_factor*self._step,
                'xs' : xs }
-        if not self._v is None:
+        if not self._v_I is None:
             res['vs'] = [self.v_factor*self._v[:,I] for I in self.indexes]
 
         return res
