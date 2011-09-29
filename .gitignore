@@ -5,6 +5,7 @@
 *.trj.gz
 *.trj.bz2
 *.so
+*.dylib
 *.png
 *.xvg
 *.pdf
