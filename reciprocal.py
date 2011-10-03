@@ -7,11 +7,11 @@ from ctypes import cdll, byref, c_int, c_float, POINTER
 
 np_ndp = np.ctypeslib.ndpointer
 
-_lib = cdll.LoadLibrary('./_rho_j_q.so')
-_rho_q_d = _lib.rho_q
-_rho_j_q_d = _lib.rho_j_q
-#_rho_q_s = _lib.rho_q_s
-#_rho_j_q_s = _lib.rho_j_q_s
+_lib = cdll.LoadLibrary('./_rho_j_k.so')
+_rho_k_d = _lib.rho_k
+_rho_j_k_d = _lib.rho_j_k
+#_rho_k_s = _lib.rho_k_s
+#_rho_j_k_s = _lib.rho_j_k_s
 
 ndp_f64_2d = np_ndp(dtype=np.float64, ndim=2, 
                     flags='f_contiguous, aligned')
@@ -27,60 +27,61 @@ ndp_c64_1d = np_ndp(dtype=np.complex64, ndim=1,
 ndp_c64_2d = np_ndp(dtype=np.complex64, ndim=2, 
                     flags='f_contiguous, aligned, writeable')
 
-_rho_j_q_d.argtypes = [ndp_f64_2d, ndp_f64_2d, c_int, 
+_rho_j_k_d.argtypes = [ndp_f64_2d, ndp_f64_2d, c_int, 
                        ndp_f64_2d, c_int,
                        ndp_c128_1d, ndp_c128_2d]
-_rho_q_d.argtypes =   [ndp_f64_2d, c_int, 
+_rho_k_d.argtypes =   [ndp_f64_2d, c_int, 
                        ndp_f64_2d, c_int, 
                        ndp_c128_1d]
 
-#_rho_j_q_s.argtypes = [ndp_f32_2d, ndp_f32_2d, c_int, 
+#_rho_j_k_s.argtypes = [ndp_f32_2d, ndp_f32_2d, c_int, 
 #                       ndp_f32_2d, c_int,
 #                       ndp_c64_1d, ndp_c64_2d]
-#_rho_q_s.argtypes =   [ndp_f32_2d, c_int, 
+#_rho_k_s.argtypes =   [ndp_f32_2d, c_int, 
 #                       ndp_f32_2d, c_int, 
 #                       ndp_c64_1d]
 
-def calc_rho_q(x, q):
+def calc_rho_k(x, k):
     x = np.require(x, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    q = np.require(q, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
+    k = np.require(k, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
     _, Nx = x.shape
-    _, Nq = q.shape
-    rho_q = np.zeros((Nq,), dtype=np.complex128, order='F')
-    _rho_q_d(x, Nx, q, Nq, rho_q)
-    return rho_q
+    _, Nk = k.shape
+    rho_k = np.zeros((Nk,), dtype=np.complex128, order='F')
+    _rho_k_d(x, Nx, k, Nk, rho_k)
+    return rho_k
 
-def calc_rho_j_q(x, v, q):
+def calc_rho_j_k(x, v, k):
     assert x.shape == v.shape
     x = np.require(x, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
     v = np.require(v, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    q = np.require(q, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
+    k = np.require(k, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
     _, Nx = x.shape
-    _, Nq = q.shape
-    rho_q = np.zeros((Nq,), dtype=np.complex128, order='F')
-    j_q = np.zeros((3,Nq), dtype=np.complex128, order='F')
-    _rho_j_q_d(x, v, Nx, q, Nq, rho_q, j_q)
-    return rho_q, j_q
+    _, Nk = k.shape
+    rho_k = np.zeros((Nk,), dtype=np.complex128, order='F')
+    j_k = np.zeros((3,Nk), dtype=np.complex128, order='F')
+    _rho_j_k_d(x, v, Nx, k, Nk, rho_k, j_k)
+    return rho_k, j_k
 
 
 
 
 class reciprocal:
-    def __init__(self, box, N_max=-1, q_max=10.0, debug=False):
-        """Creates a set of reciprocal coordinates, and calculate rho_q/j_q 
+    def __init__(self, box, N_max=-1, k_max=10.0, debug=False):
+        """Creates a set of reciprocal coordinates, and calculate rho_k/j_k 
         for a trajectory frame.
 
+        
         Optionally limit the set to approximately N_max points by
         randomly removing points. The points are removed in such a way
-        that for q>q_prune, the points will be radially uniformely 
-        distributed (the value of q_prune is calculated from q_max, N_max,
+        that for k>k_prune, the points will be radially uniformely 
+        distributed (the value of k_prune is calculated from k_max, N_max,
         and the shape of the box). 
 
-        q_max should be the "crystallographic reciprocal length" (no 2*pi factor)
+        k_max should be the "physicist reciprocal length" (with 2*pi factor)
         """
         assert(N_max == -1 or N_max > 1000)
 
-        self.q_max = q_max
+        self.k_max = k_max
         self.N_max = N_max
         self.A = box.copy()
         # B is the "crystallographic" reciprocal vectors
@@ -88,6 +89,7 @@ class reciprocal:
 
         self.debug = debug
 
+        q_max = k_max/(2.0*np.pi)
         q_mins = np.array([np.linalg.norm(b) for b in self.B])
         q_vol = np.prod(q_mins)
         self.q_mins = q_mins
@@ -97,7 +99,7 @@ class reciprocal:
             # Do not deselect k-points
             self.q_prune = None
         else:
-            # Use Cardano's formula to find q_prune
+            # Use Cardano's formula to find k_prune
             p = -3.0*q_max**2/4
             q = 3.0*N_max*q_vol/np.pi - q_max**3/4
             D = (p/3)**3 + (q/2)**2
@@ -108,7 +110,7 @@ class reciprocal:
             self.q_prune = np.real(x) + q_max/2
 
         b1, b2, b3 = [(2*np.pi)*x.reshape((3,1,1,1)) for x in self.B]
-        Nk1, Nk2, Nk3 = [np.ceil(q_max/dk) for dk in q_mins]
+        Nk1, Nk2, Nk3 = [np.ceil(q_max/dq) for dq in q_mins]
         kvals = \
             b1 * np.arange(Nk1, dtype=np.float64).reshape((1,Nk1,1,1)) + \
             b2 * np.arange(Nk2, dtype=np.float64).reshape((1,1,Nk2,1)) + \
@@ -131,7 +133,8 @@ class reciprocal:
         self.kvals = kvals
         self.qdist = qdist
         N = len(qdist)
-        self.kdirect = kvals / (2.0*np.pi*qdist.reshape((1,N)))
+        self.kdist = 2.0*np.pi*qdist
+        self.kdirect = kvals / (self.kdist.reshape((1,N)))
 
     def process_frame(self, frame):
         if self.debug: 
@@ -140,14 +143,14 @@ class reciprocal:
 
         frame = frame.copy()
         if 'vs' in frame:
-            rho_qs, j_qs = zip(*[calc_rho_j_q(x, v, self.kvals) 
+            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.kvals) 
                                  for x,v in zip(frame['xs'],frame['vs'])])
-            jz_qs = [np.sum(j*self.kdirect, axis=0) for j in j_qs]
-            frame['j_qs'] = j_qs
-            frame['jz_qs'] = jz_qs
-            frame['jpar_qs'] = [j-(jz*self.kdirect) for j,jz in zip(j_qs, jz_qs)]
-            frame['rho_qs'] = rho_qs
+            jz_ks = [np.sum(j*self.kdirect, axis=0) for j in j_ks]
+            frame['j_ks'] = j_ks
+            frame['jz_ks'] = jz_ks
+            frame['jpar_ks'] = [j-(jz*self.kdirect) for j,jz in zip(j_ks, jz_ks)]
+            frame['rho_ks'] = rho_ks
         else:
-            frame['rho_qs'] = [calc_rho_q(x, self.kvals) for x in frame['xs']]
+            frame['rho_ks'] = [calc_rho_k(x, self.kvals) for x in frame['xs']]
         return frame
 

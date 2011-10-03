@@ -4,8 +4,7 @@ import re
 import sys
 import numpy as np
 
-from itertools import count, islice, imap
-from collections import deque
+from itertools import count, islice
 
 from traj_io import get_itraj, iwindow
 from filon import filonc
@@ -13,20 +12,23 @@ from reciprocal import reciprocal
 
 
 class averager:
-    def __init__(self, init_array, N_slots):
-        assert type(N_slots) is int
+    def __init__(self, N_slots, initial=np.zeros(1)):
+        assert(N_slots >= 1)
         self._N = N_slots
-        self._data = [np.array(init_array) for n in range(N_slots)]
-        self._samples = [0]*N_slots
+        self._data = [np.array(initial) for n in range(N_slots)]
+        self._samples = np.zeros(N_slots)
+    def __getitem__(self, key):
+        return self._data[key]
+    def __setitem__(self, key, val):
+        self._data[key] = val
+        self._samples[key] += 1
     def add(self, array, slot):
-        self._data[slot] = self._data[slot] + array
-        self._samples[slot] += 1
-    def get_av(self, slot):
-        n = self._samples[slot]
-        assert n > 0
-        f = 1.0/n
+        self[slot] += array
+    def get_single_av(self, slot):
+        f = 1.0/self._samples[slot]
         return f*self._data[slot]
-
+    def get_av(self):
+        return np.array([self.get_single_av(i) for i in range(self._N)])
         
 
 if __name__ == '__main__':
@@ -41,19 +43,17 @@ if __name__ == '__main__':
                       help='Index file (Gromacs style) for specifying '
                       'atom types. If none is given, all atoms will be '
                       'considered identical.')
-#    parser.add_option('','--tc', metavar='CORR_TIME', type='float',
-#                      help='Correlation time (ps) to consider.')
     parser.add_option('','--nc', metavar='CORR_STEPS', type='int',
                       help='Number of time correlation steps to consider.')
-    parser.add_option('','--Nq', metavar='QPOINTS', type='int',
+    parser.add_option('','--Nk', metavar='KPOINTS', type='int',
                       default=40000,
-                      help='Approximate maximum number of q points sampled. '
-                      'QPOINTS=-1 implies no limit.')
-    parser.add_option('','--q-bins', metavar='BINS', type='int',
-                      default=80, help='Number of bins used along the q-axis for '
+                      help='Approximate maximum number of k points sampled. '
+                      'KPOINTS=-1 implies no limit.')
+    parser.add_option('','--k-bins', metavar='BINS', type='int',
+                      default=80, help='Number of bins used along the k-axis for '
                       'the final result.')
-    parser.add_option('','--q-max', metavar='KMAX', type='float', default=20,
-                      help='Largest inverse length to consider (in nm^-1)')
+    parser.add_option('','--k-max', metavar='KMAX', type='float', default=20,
+                      help='Largest inverse length to consider (in 2*pi*nm^-1)')
     parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
                       default=0,
                       help='Read no more than NFRAMES frames from trajectory file')
@@ -70,10 +70,6 @@ if __name__ == '__main__':
     if not options.f:
         parser.print_help()
         sys.exit()
-
-#    if options.tc and options.nc:
-#        print('Options --tc and --nc are mutuly exclusive')
-#        sys.exit(1)
 
     if options.f is None:
         print('A trajectory must be specified with option -f')
@@ -96,11 +92,6 @@ if __name__ == '__main__':
                   (delta_t, 1.0/delta_t))
 
     
-#    if options.tc:
-#        assert(options.tc >= 0.0)
-#        N_tc = 1 + int(ceil(options.tc/delta_t))
-#        N_tc += N_tc%2
-#    elif options.nc:
     if options.nc:
         assert(options.nc >= 1)
         N_tc = options.nc
@@ -117,12 +108,12 @@ if __name__ == '__main__':
     if options.verbose:
         print('Simulation box = \n%s' % str(reference_box))
 
-    rec = reciprocal(reference_box, N_max=options.Nq, q_max=options.q_max,
+    rec = reciprocal(reference_box, N_max=options.Nk, k_max=options.k_max,
                      debug=options.verbose)
                      
     if options.verbose:
-        print('Nq points = %i' % len(rec.qdist))
-        print('q_max = %f --> x_min = %f' % (options.q_max, 1.0/options.q_max))
+        print('Nk points = %i' % len(rec.qdist))
+        print('k_max = %f --> x_min = %f' % (options.k_max, 1.0/options.k_max))
 
     
     assert options.stride > 0
@@ -131,13 +122,12 @@ if __name__ == '__main__':
     itraj = get_itraj(options.f, index_file=options.n, 
                             step=options.step, max_frames=options.max_frames)
 
-    traj_window = iwindow(itraj, width=N_tc, stride=options.stride,
-                          map_item=rec.process_frame)
+    itraj_window = iwindow(itraj, width=N_tc, stride=options.stride,
+                           map_item=rec.process_frame)
 
 
     # TODO....
     # * Assert box is not changed during consecutive frames
-    # * Handle different time steps?
 
 
     m = count(0)
@@ -145,78 +135,67 @@ if __name__ == '__main__':
                 for i in range(len(types)) for j in range(i,len(types))]
     type_pairs = [types[i]+'-'+types[j] for _, i, j in mij_list]
 
-    F_q_t_avs = [averager(np.zeros(len(rec.qdist)), N_tc) for _ in mij_list]
+    z = np.zeros(len(rec.qdist))
+    F_k_t_avs = [averager(N_tc, z) for _ in mij_list]
     if calculate_current:
-        Cl_q_t_avs = [averager(np.zeros(len(rec.qdist)), N_tc) for _ in mij_list]
-        Ct_q_t_avs = [averager(np.zeros(len(rec.qdist)), N_tc) for _ in mij_list]
+        Cl_k_t_avs = [averager(N_tc, z) for _ in mij_list]
+        Ct_k_t_avs = [averager(N_tc, z) for _ in mij_list]
 
-    for frame_list in traj_window:
+    for wind in itraj_window:
         if calculate_current:
-            rho_q_0s = frame_list[0]['rho_qs']
-            jz_q_0s = frame_list[0]['jz_qs']
-            jpar_q_0s = frame_list[0]['jpar_qs']
-            for time_i, frame in enumerate(frame_list):
-                rho_q_is = frame['rho_qs']
-                jz_q_is = frame['jz_qs']
-                jpar_q_is = frame['jpar_qs']
+            rho_k_0s = wind[0]['rho_ks']
+            jz_k_0s = wind[0]['jz_ks']
+            jpar_k_0s = wind[0]['jpar_ks']
+            for time_i, frame in enumerate(wind):
+                rho_k_is = frame['rho_ks']
+                jz_k_is = frame['jz_ks']
+                jpar_k_is = frame['jpar_ks']
                 for m, i, j in mij_list:
-                    F_q_t_avs[m].add(np.real(rho_q_0s[i] * rho_q_is[j].conjugate()), time_i)
-                    Cl_q_t_avs[m].add(np.real(jz_q_0s[i] * jz_q_is[j].conjugate()), time_i)
-                    Ct_q_t_avs[m].add(0.5 * np.real(np.sum(jpar_q_0s[i] * \
-                                                               jpar_q_is[j].conjugate(),
-                                                           axis=0)), 
-                                      time_i)
+                    F_k_t_avs[m][time_i] += np.real(rho_k_0s[i] * rho_k_is[j].conjugate())
+                    Cl_k_t_avs[m][time_i] += np.real(jz_k_0s[i] * jz_k_is[j].conjugate())
+                    Ct_k_t_avs[m][time_i] += 0.5 * \
+                        np.real(np.sum(jpar_k_0s[i] * jpar_k_is[j].conjugate(), axis=0))
         else:
-            rho_q_0s = frame_list[0]['rho_qs']
-            for time_i, frame in enumerate(frame_list):
-                rho_q_is = frame['rho_qs']
+            rho_k_0s = wind[0]['rho_ks']
+            for time_i, frame in enumerate(wind):
+                rho_k_is = frame['rho_ks']
                 for m, i, j in mij_list:
-                    F_q_t_avs[m].add(np.real(rho_q_0s[i] * rho_q_is[j].conjugate()), time_i)
+                    F_k_t_avs[m][time_i] += np.real(rho_k_0s[i] * rho_k_is[j].conjugate())
 
 
                 
-    F_q_t_full = [np.array([F_q_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
-                  for m, _, _ in mij_list]
+    F_k_t_full = [F_k_t_avs[m].get_av() for m, _, _ in mij_list]
     if calculate_current:
-        Cl_q_t_full = [np.array([Cl_q_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
-                       for m, _, _ in mij_list]
-        Ct_q_t_full = [np.array([Ct_q_t_avs[m].get_av(time_i) for time_i in range(N_tc)])
-                       for m, _, _ in mij_list]
+        Cl_k_t_full = [Cl_k_t_avs[m].get_av() for m, _, _ in mij_list]
+        Ct_k_t_full = [Ct_k_t_avs[m].get_av() for m, _, _ in mij_list]
 
-    # naive smooth it out
-    pts = options.q_bins
-    delta_q = rec.qdist[1]
-    max_q = options.q_max
-    rng = (-delta_q/4, max_q+delta_q/4) 
-    Npoints, edges = np.histogram(rec.qdist, bins=pts, range=rng)
-    F_q_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
-    #F_q_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
+    # simple smoothing using radially distributed bins
+    pts = options.k_bins
+    delta_k = rec.kdist[1]
+    max_k = options.k_max
+    rng = (-delta_k/4, max_k+delta_k/4) 
+    Npoints, edges = np.histogram(rec.kdist, bins=pts, range=rng)
+    F_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
     if calculate_current:
-        Cl_q_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
-        #Cl_q_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
-        Ct_q_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
-        #Ct_q_t_sd = [np.zeros((N_tc, pts)) for _ in mij_list]
-    q = 0.5*(edges[1:]+edges[:-1])
+        Cl_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
+        Ct_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
+    k = 0.5*(edges[1:]+edges[:-1])
     t = delta_t*np.arange(N_tc)
     
     for m,_,_ in mij_list:
         ci = 0
         for i, n in enumerate(Npoints):
             if n == 0:
-                F_q_t[m][:,i] = np.NaN
+                F_k_t[m][:,i] = np.NaN
                 if calculate_current:
-                    Cl_q_t[m][:,i] = np.NaN
-                    Ct_q_t[m][:,i] = np.NaN
+                    Cl_k_t[m][:,i] = np.NaN
+                    Ct_k_t[m][:,i] = np.NaN
             else:
-                s = F_q_t_full[m][:,ci:ci+n]
-                F_q_t[m][:,i] = np.mean(s, axis=1)
-                #F_q_t_sd[m][:,i] = np.std(s, axis=1)
+                s = F_k_t_full[m][:,ci:ci+n]
+                F_k_t[m][:,i] = np.mean(s, axis=1)
                 if calculate_current:
-                    s = Cl_q_t_full[m][:,ci:ci+n]
-                    Cl_q_t[m][:,i] = np.mean(s, axis=1)
-                    #Cl_q_t_sd[m][:,i] = np.std(s, axis=1)
-                    s = Ct_q_t_full[m][:,ci:ci+n]
-                    Ct_q_t[m][:,i] = np.mean(s, axis=1)
-                    #Ct_q_t_sd[m][:,i] = np.std(s, axis=1)
-
+                    s = Cl_k_t_full[m][:,ci:ci+n]
+                    Cl_k_t[m][:,i] = np.mean(s, axis=1)
+                    s = Ct_k_t_full[m][:,ci:ci+n]
+                    Ct_k_t[m][:,i] = np.mean(s, axis=1)
                 ci += n
