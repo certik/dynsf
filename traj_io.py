@@ -1,10 +1,11 @@
 
-__all__ = ['trajectory_iterator', 'XTC_reader', 'TRJ_reader', 'read_ndx_file']
+__all__ = ['get_itraj', 'iwindow', 'XTC_reader', 'TRJ_reader', 'read_ndx_file']
 
 from ctypes import cdll, byref, c_int, c_float, c_char_p, POINTER
 from ctypes.util import find_library
-from itertools import islice
+from itertools import islice, imap
 from os.path import isfile
+from collections import deque
 
 import numpy as np
 import re
@@ -25,28 +26,84 @@ class curry:
 
         return self.fun(*(self.pending + args), **kw)
 
-def trajectory_iterator(filename, index_file=None, step=1, max_frames=0):
-        if filename.endswith('.xtc'):
-            reader = XTC_reader
-        elif re.match(r'^.+\.trj(\.(gz|bz2))?$', filename):
-            reader = curry(TRJ_reader, x_factor=0.1, t_factor=1.0)
-        else:
-            raise RuntimeError('Unknown file format (suffix)')
+def get_itraj(filename, index_file=None, step=1, max_frames=0):
+    """Return a trajectory iterator
+
+    step, 1 by default (every single frame), must be > 0
+    max_frames, 0 by default (== no limit), must be >= 0
+    """
+    if filename.endswith('.xtc'):
+        reader = XTC_reader
+    elif re.match(r'^.+\.trj(\.(gz|bz2))?$', filename):
+        reader = curry(TRJ_reader, x_factor=0.1, t_factor=1.0)
+    else:
+        raise RuntimeError('Unknown file format (suffix)')
         
-        if not isfile(filename):
-            raise RuntimeError('File %s does not exist'%filename)
+    if not isfile(filename):
+        raise RuntimeError('File %s does not exist'%filename)
 
-        i = reader(filename, index_file=index_file)
+    i = reader(filename, index_file=index_file)
 
-        assert step > 0
-        assert max_frames >= 0
-        if max_frames == 0: 
-            max_frames = sys.maxint
-        elif step > 1:
-            max_frames = max_frames*step
-        i = islice(i, 0, max_frames, step)
+    assert step > 0
+    assert max_frames >= 0
+    if max_frames == 0: 
+        max_frames = sys.maxint
+    elif step > 1:
+        max_frames = max_frames*step
+    i = islice(i, 0, max_frames, step)
+    
+    return i
 
-        return i
+
+def consume(iterator, n):
+    "Advance the iterator n-steps ahead. If n is none, consume entirely."
+    # From the python.org
+    if n is None:
+        deque(iterator, maxlen=0)
+    else:
+        next(islice(iterator, n, n), None)
+
+
+class iwindow:
+    """Sliding window iterator
+
+    Variable width (length of window, default 2), 
+    and stride (distance between two consecutive window frames,
+    default 1).
+    Optional map_item to process each non-discarded object.
+    Useful if stride > width and map_item is expensive.
+    """
+    def __init__(self, itraj, width=2, stride=1, map_item=None):
+        self._raw_it = itraj
+        if map_item: self._it = imap(map_item, self._raw_it)
+        else: self._it = self._raw_it
+        assert(stride >= 1)
+        assert(width >= 1)
+        self.width = width
+        self.stride = stride
+        self._window = None
+        
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self._window is None:
+            self._window = deque(islice(self._it, self.width), self.width)
+        else:
+            if self.stride >= self.width:
+                self._window.clear()
+                consume(self._raw_it, self.stride-self.width)
+            else:
+                for _ in range(min((self.stride, len(self._window)))):
+                    self._window.popleft()
+            for f in islice(self._it, min((self.stride, self.width))):
+                self._window.append(f)
+
+        if len(self._window) == 0:
+            raise StopIteration
+
+        return list(self._window)
+
 
 
 lname = find_library('gmx')
