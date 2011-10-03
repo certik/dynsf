@@ -3,7 +3,11 @@ __all__ = ['filonc']
 from numpy import sin, cos, zeros, arange, mod, sum
 
 def filonc(f, dx, dk):
-    """Calculate fourier cosine transform of function f(x) using Filons method
+    """Calculate fourier cosine transform of function f(x) using 
+    Filon's integration method
+
+    C.f. http://mathworld.wolfram.com/FilonsIntegrationFormula.html,
+    Allen Tildesley, Appendix D.
 
     If f is a 2D-array, the transformation is done along each individual
     column (axis=0).

@@ -1,9 +1,10 @@
 
 __all__ = ['trajectory_iterator', 'XTC_reader', 'TRJ_reader', 'read_ndx_file']
 
-from ctypes import cdll, byref, c_int, c_float, POINTER
+from ctypes import cdll, byref, c_int, c_float, c_char_p, POINTER
 from ctypes.util import find_library
 from itertools import islice
+from os.path import isfile
 
 import numpy as np
 import re
@@ -31,6 +32,9 @@ def trajectory_iterator(filename, index_file=None, step=1, max_frames=0):
             reader = curry(TRJ_reader, x_factor=0.1, t_factor=1.0)
         else:
             raise RuntimeError('Unknown file format (suffix)')
+        
+        if not isfile(filename):
+            raise RuntimeError('File %s does not exist'%filename)
 
         i = reader(filename, index_file=index_file)
 
@@ -57,6 +61,7 @@ if libgmx:
     # t_fileio *open_xtc(const char *filename,const char *mode);
     # /* Open a file for xdr I/O */
     libgmx.open_xtc.restype = POINTER(xtcint_ct)
+    libgmx.open_xtc.argtypes = [c_char_p, c_char_p]
 
     # int read_first_xtc(t_fileio *fio,
     #                           int *natoms,int *step,real *time,
@@ -101,7 +106,7 @@ class XTC_reader:
         if libgmx is None:
             raise RuntimeError("No libgmx found, can't read xtc-file")
         
-        self._fio = libgmx.open_xtc(filename, 'r')
+        self._fio = libgmx.open_xtc(filename, 'rb')
         if not self._fio:
             raise IOError("Failed to open file %s (for some reason)" % filename)
 
