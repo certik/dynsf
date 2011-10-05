@@ -354,10 +354,10 @@ class TRJ_reader:
                     return False
             return True
 
-        if _all_in_cols(('id','x','y','z')):
-            self._x_I = np.array(map(cols.index, ('x','y','z')))
-        elif _all_in_cols(('id','xu','yu','zu')):
+        if _all_in_cols(('id','xu','yu','zu')):
             self._x_I = np.array(map(cols.index, ('xu','yu','zu')))
+        elif _all_in_cols(('id','x','y','z')):
+            self._x_I = np.array(map(cols.index, ('x','y','z')))
         else:
             raise RuntimeError('TRJ file must contain at least atom-id, x, y, '
                                'and z coordinates to be useful.')
@@ -368,10 +368,10 @@ class TRJ_reader:
         else:
             self._v_I = None
 
-        #if 'type' in cols:
-        #    self._type_I = cols.index('type')
-        #else:
-        #    self._type_I = None
+        if 'type' in cols:
+            self._type_I = cols.index('type')
+        else:
+            self._type_I = None
 
         data = np.array([map(float, self._fh.readline().split()) 
                          for _ in range(N)])
