@@ -1,4 +1,4 @@
-__all__ = ['fourier_cos', 'general_sin_integral', 'general_cos_integral']
+__all__ = ['fourier_cos', 'sin_integral', 'cos_integral']
 
 from numpy import sin, cos, pi, mod, \
     zeros, arange, linspace, require, \
@@ -24,7 +24,7 @@ where k and Fj have end index Nk, and fj have end index Nx.
 Nk is arbitrarily, and is derived from the length of k.
 Nx must be an even number (i.e. fj should have an odd length).
 
-general_sin_integral and general_cos_integral allows for shifted 
+sin_integral and cos_integral allows for shifted 
 x-intervals by the optional argument x0.
 
 """
@@ -37,25 +37,26 @@ def fourier_cos(f, dx, k=None):
     k, F = fourier_cos(f, dx)
     Array values f[0]..f[2n] is expected to correspond to f(0.0)..f(2n*dx),
     hence, it should contain an odd number of elements.
-    The transform is approximated with the integral (xmax = 2n*dx)
+    The transform is approximated with the integral
     2*\int_{0}^{xmax} 
+    where xmax = 2n*dx
 
     """ 
     
     if k is None:
         k = linspace(0.0, pi/dx, f.shape[0])
 
-    return k, 2*general_cos_integral(f, dx, k, x0=0.0)
+    return k, 2*cos_integral(f, dx, k, x0=0.0)
 
 
-def general_cos_integral(f, dx, k, x0=0.0):
+def cos_integral(f, dx, k, x0=0.0):
     """\int_{x0}^{2n*dx} f(x)*cos(k x) dx
     
     f must have length 2n+1.
     """ 
     return _gen_sc_int(f, dx, k, x0, cos)
 
-def general_sin_integral(f, dx, k, x0=0.0):
+def sin_integral(f, dx, k, x0=0.0):
     """\int_{x0}^{2n*dx} f(x)*sin(k x) dx
     
     f must have length 2n+1.
@@ -63,7 +64,7 @@ def general_sin_integral(f, dx, k, x0=0.0):
     return _gen_sc_int(f, dx, k, x0, sin)
 
 
-def _gen_sc_int(f, dx, k, x0, sc):
+def _gen_sc_int(f, dx, k, x0, sc, f_k_x=False):
 
     f = require(f)
     k = require(k)

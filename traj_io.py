@@ -71,12 +71,15 @@ class iwindow:
     and stride (distance between two consecutive window frames,
     default 1).
     Optional map_item to process each non-discarded object.
-    Useful if stride > width and map_item is expensive.
+    Useful if stride > width and map_item is expensive (as compared to
+    directly passing imap(fun, itraj) as itraj).
     """
-    def __init__(self, itraj, width=2, stride=1, map_item=None):
+    def __init__(self, itraj, width=2, stride=1, map_fun=None):
         self._raw_it = itraj
-        if map_item: self._it = imap(map_item, self._raw_it)
-        else: self._it = self._raw_it
+        if map_fun: 
+            self._it = imap(map_fun, self._raw_it)
+        else: 
+            self._it = self._raw_it
         assert(stride >= 1)
         assert(width >= 1)
         self.width = width

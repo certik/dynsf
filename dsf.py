@@ -7,8 +7,8 @@ import numpy as np
 from itertools import count, islice
 
 from traj_io import get_itraj, iwindow
-from filon import filonc
 from reciprocal import reciprocal
+import filon
 
 
 class averager:
@@ -77,10 +77,10 @@ if __name__ == '__main__':
 
     iframe = get_itraj(options.f, step=options.step)
     
-    f0, f1 = islice(iframe, 2) 
+    f0, f1 = islice(iframe, 2)
     delta_t = f1['time'] - f0['time']
     reference_box = f0['box']
-    types = f0['types']
+    particle_types = f0['types']
 
     if 'vs' in f0:
         calculate_current = True
@@ -94,7 +94,7 @@ if __name__ == '__main__':
     
     if options.nc:
         assert(options.nc >= 1)
-        N_tc = options.nc
+        N_tc = options.nc + (options.nc+1)%2
     else:
         N_tc = 1
 
@@ -123,7 +123,7 @@ if __name__ == '__main__':
                             step=options.step, max_frames=options.max_frames)
 
     itraj_window = iwindow(itraj, width=N_tc, stride=options.stride,
-                           map_item=rec.process_frame)
+                           map_fun=rec.process_frame)
 
 
     # TODO....
@@ -131,9 +131,10 @@ if __name__ == '__main__':
 
 
     m = count(0)
+    Ntypes = len(particle_types)
     mij_list = [(m.next(),i,j) 
-                for i in range(len(types)) for j in range(i,len(types))]
-    type_pairs = [types[i]+'-'+types[j] for _, i, j in mij_list]
+                for i in range(Ntypes) for j in range(i,Ntypes)]
+    type_pairs = [particle_types[i]+'-'+particle_types[j] for _, i, j in mij_list]
 
     z = np.zeros(len(rec.qdist))
     F_k_t_avs = [averager(N_tc, z) for _ in mij_list]
@@ -171,9 +172,9 @@ if __name__ == '__main__':
 
     # simple smoothing using radially distributed bins
     pts = options.k_bins
-    delta_k = rec.kdist[1]
     max_k = options.k_max
-    rng = (-delta_k/4, max_k+delta_k/4) 
+    delta_k = max_k / pts
+    rng = (-delta_k/2, max_k+delta_k/2) 
     Npoints, edges = np.histogram(rec.kdist, bins=pts, range=rng)
     F_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
     if calculate_current:
@@ -186,10 +187,10 @@ if __name__ == '__main__':
         ci = 0
         for i, n in enumerate(Npoints):
             if n == 0:
-                F_k_t[m][:,i] = np.NaN
+                F_k_t[m][:,i] = 0.0 #np.NaN
                 if calculate_current:
-                    Cl_k_t[m][:,i] = np.NaN
-                    Ct_k_t[m][:,i] = np.NaN
+                    Cl_k_t[m][:,i] = 0.0 #np.NaN
+                    Ct_k_t[m][:,i] = 0.0 #np.NaN
             else:
                 s = F_k_t_full[m][:,ci:ci+n]
                 F_k_t[m][:,i] = np.mean(s, axis=1)
@@ -199,3 +200,9 @@ if __name__ == '__main__':
                     s = Ct_k_t_full[m][:,ci:ci+n]
                     Ct_k_t[m][:,i] = np.mean(s, axis=1)
                 ci += n
+
+    if len(t) > 2:
+        w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in mij_list])
+        w = w[0]
+
+    
