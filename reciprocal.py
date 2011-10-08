@@ -126,7 +126,7 @@ class reciprocal:
             p = np.ones(N)
             # N(k) = a k^3
             # N'(k) = 3a k^2
-            p[1:] = (self.q_prune[1:]/qdist[1:])**2
+            p[1:] = (self.q_prune/qdist[1:])**2
             I = np.nonzero(p > np.random.rand(N))[0]
             qdist = qdist[I]
             kvals = kvals[:,I]

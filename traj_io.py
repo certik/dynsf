@@ -158,7 +158,7 @@ class XTC_reader:
     Each frame is represented as a dictionary.
     {'N': number of atoms,
      'box': simulation box as 3 row vectors (nm),
-     'x': xyz data as 3xN array (nm),
+     'xs': xyz data as 3xN array (nm),
      'step': simulation step,
      'time': simulation time (ps) }
     """
@@ -261,7 +261,7 @@ class XTC_reader:
 
 
 class TRJ_reader:
-    """Read LAMMPS trajectory file, naive implementation
+    """Read LAMMPS trajectory file, naive (and slow) implementation
     """
     def __init__(self, filename, index_file=None, 
                  x_factor=1.0, t_factor=1.0):
@@ -378,7 +378,9 @@ class TRJ_reader:
 
         data = np.array([map(float, self._fh.readline().split()) 
                          for _ in range(N)])
-        I = np.asarray(data[:,self._id_I], dtype=np.int)-1
+        I = np.asarray(data[:,self._id_I], dtype=np.int)
+        # Unless dump is done for group "all" ...
+        I[np.argsort(I)] = np.arange(len(I))
         self._x = np.zeros((3,N), order='F')
         self._x[:,I] = data[:,self._x_I].transpose()
         if not self._v_I is None:

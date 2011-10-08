@@ -49,22 +49,22 @@ def fourier_cos(f, dx, k=None):
     return k, 2*cos_integral(f, dx, k, x0=0.0)
 
 
-def cos_integral(f, dx, k, x0=0.0):
+def cos_integral(f, dx, k, x0=0.0, f_dep_on_k=False):
     """\int_{x0}^{2n*dx} f(x)*cos(k x) dx
     
     f must have length 2n+1.
     """ 
-    return _gen_sc_int(f, dx, k, x0, cos)
+    return _gen_sc_int(f, dx, k, x0, cos, f_dep_on_k)
 
-def sin_integral(f, dx, k, x0=0.0):
+def sin_integral(f, dx, k, x0=0.0, f_dep_on_k=False):
     """\int_{x0}^{2n*dx} f(x)*sin(k x) dx
     
     f must have length 2n+1.
     """ 
-    return _gen_sc_int(f, dx, k, x0, sin)
+    return _gen_sc_int(f, dx, k, x0, sin, f_dep_on_k)
 
 
-def _gen_sc_int(f, dx, k, x0, sc, f_k_x=False):
+def _gen_sc_int(f, dx, k, x0, sc, f_dep_on_k):
 
     f = require(f)
     k = require(k)
@@ -80,9 +80,16 @@ def _gen_sc_int(f, dx, k, x0, sc, f_k_x=False):
 
     if len(k.shape) != 1:
         raise RuntimeError('k should be one dimensional')
-    Nk = len(k)
 
+    Nk = len(k)
     N = f_original_shape[0]
+
+    if f_dep_on_k:
+        if f_original_shape[1] != Nk:
+            raise RuntimeError('Wrong shape of f, second axis must match length of k')
+        f_original_shape = (N,)
+        f = f.reshape((N,1,Nk))
+                  
     Nmax = N-1
     if mod(Nmax, 2) != 0 or N < 3:
         raise RuntimeError('f should have an odd length (>2) along its first axis')
@@ -111,8 +118,8 @@ def _gen_sc_int(f, dx, k, x0, sc, f_k_x=False):
         F = dx*(alpha*(f[Nmax,:,:]*sin(k*x[Nmax,:,:]) - f[0,:,:]*sin(k*x0)) +
                 beta*sum(fE*sc_k_xE, axis=0) + gamma*sum(fO*sc_k_xO, axis=0))
     else:
-        raise RuntimeError('Internal error')
-    
+        raise RuntimeError('Internal error, this should not happen')
+   
     F = F.transpose(2,1,0).reshape((Nk,) + f_original_shape[1:])
     return F
 
