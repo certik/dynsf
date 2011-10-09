@@ -6,9 +6,9 @@ import numpy as np
 
 from itertools import count, islice
 
-from traj_io import get_itraj, iwindow
-from reciprocal import reciprocal
-import filon
+from dsf.traj_io import get_itraj, iwindow
+from dsf.reciprocal import reciprocal
+import dsf.filon as filon
 
 
 class averager:
@@ -34,7 +34,6 @@ class averager:
 if __name__ == '__main__':
     import sys
     import optparse
-    from math import ceil
 
     parser = optparse.OptionParser()
     parser.add_option('-f', '', metavar='TRAJECTORY_FILE',
