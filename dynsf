@@ -26,10 +26,11 @@ import numpy as np
 
 from itertools import count, islice
 
-from dsf.traj_io import get_itraj, iwindow
+from dsf.traj_io import get_itraj, iwindow, curry
 from dsf.reciprocal import reciprocal
 import dsf.filon as filon
 
+from dsf.handythread import foreach
 
 class averager:
     def __init__(self, N_slots, initial=np.zeros(1)):
@@ -161,26 +162,30 @@ if __name__ == '__main__':
         Cl_k_t_avs = [averager(N_tc, z) for _ in mij_list]
         Ct_k_t_avs = [averager(N_tc, z) for _ in mij_list]
 
+
+    if calculate_current:
+        def calc_corr(window, time_i):
+            f0 = window[0]
+            fi = window[time_i]
+            for m, i, j in mij_list:
+                F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] * 
+                                                fi['rho_ks'][j].conjugate())
+                Cl_k_t_avs[m][time_i] += np.real(f0['jz_ks'][i] * 
+                                                 fi['jz_ks'][j].conjugate())
+                Ct_k_t_avs[m][time_i] += 0.5 * \
+                    np.real(np.sum(f0['jpar_ks'][i] * 
+                                   fi['jpar_ks'][j].conjugate(), axis=0))
+    else:
+        def calc_corr(window, time_i):
+            f0 = window[0]
+            fi = window[time_i]
+            for m, i, j in mij_list:
+                F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] * 
+                                                fi['rho_ks'][j].conjugate())
+            
+
     for wind in itraj_window:
-        if calculate_current:
-            rho_k_0s = wind[0]['rho_ks']
-            jz_k_0s = wind[0]['jz_ks']
-            jpar_k_0s = wind[0]['jpar_ks']
-            for time_i, frame in enumerate(wind):
-                rho_k_is = frame['rho_ks']
-                jz_k_is = frame['jz_ks']
-                jpar_k_is = frame['jpar_ks']
-                for m, i, j in mij_list:
-                    F_k_t_avs[m][time_i] += np.real(rho_k_0s[i] * rho_k_is[j].conjugate())
-                    Cl_k_t_avs[m][time_i] += np.real(jz_k_0s[i] * jz_k_is[j].conjugate())
-                    Ct_k_t_avs[m][time_i] += 0.5 * \
-                        np.real(np.sum(jpar_k_0s[i] * jpar_k_is[j].conjugate(), axis=0))
-        else:
-            rho_k_0s = wind[0]['rho_ks']
-            for time_i, frame in enumerate(wind):
-                rho_k_is = frame['rho_ks']
-                for m, i, j in mij_list:
-                    F_k_t_avs[m][time_i] += np.real(rho_k_0s[i] * rho_k_is[j].conjugate())
+        foreach(curry(calc_corr, wind), range(len(wind)), threads=8)
 
 
                 
