@@ -1,4 +1,7 @@
+MANIFEST
 slask/*
+build/*
+dist/*
 *.pyc
 *.xtc
 *.ndx
@@ -6,7 +9,6 @@ slask/*
 *.trj.gz
 *.trj.bz2
 *.so
-*.dylib
 *.png
 *.xvg
 *.pdf

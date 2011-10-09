@@ -2,12 +2,13 @@ __all__ = ['reciprocal']
 
 
 import sys
+from os.path import dirname, join
 import numpy as np
 from ctypes import cdll, byref, c_int, c_float, POINTER
 
 np_ndp = np.ctypeslib.ndpointer
 
-_lib = cdll.LoadLibrary('./_rho_j_k.so')
+_lib = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k.so'))
 _rho_k_d = _lib.rho_k
 _rho_j_k_d = _lib.rho_j_k
 #_rho_k_s = _lib.rho_k_s
