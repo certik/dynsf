@@ -33,6 +33,7 @@ import dsf.filon as filon
 from dsf.handythread import foreach
 
 class averager:
+    # Special purpose averager class
     def __init__(self, N_slots, initial=np.zeros(1)):
         assert(N_slots >= 1)
         self._N = N_slots
@@ -56,35 +57,61 @@ if __name__ == '__main__':
     import sys
     import optparse
 
+    hbar = 6.58211928e-16
+
     parser = optparse.OptionParser()
     parser.add_option('-f', '', metavar='TRAJECTORY_FILE',
-                      help='Trajectory file in xtc or lammps-dump format')
+                      help='Trajectory file in xtc or lammps-dump format. '
+                      'Which format is considered is decided from the file name '
+                      'suffix. ".xtc" implies xtc-format, ".trj", ".trj.bz2", and '
+                      '".trj.gz" implies a lammps-dump file. '
+                      'The number of atoms must be constant throughout the '
+                      'trajectory, and the simulation box should be fixed.')
     parser.add_option('-n', '', metavar='INDEX_FILE',
-                      help='Index file (Gromacs style) for specifying '
-                      'atom types. If none is given, all atoms will be '
+                      help='Optional index file (think Gromacs INI-style) for '
+                      'specifying atom types. Atoms are indexed from 1 up to N '
+                      '(total number of atoms). '
+                      'It is possible to index only a sub set of all atoms, and '
+                      'atoms can be indexed in more than one group. '
+                      'If no INDEX_FILE is provided, all atoms will be '
                       'considered identical.')
-    parser.add_option('','--nc', metavar='CORR_STEPS', type='int',
-                      help='Number of time correlation steps to consider.')
+
     parser.add_option('','--Nk', metavar='KPOINTS', type='int',
                       default=40000,
-                      help='Approximate maximum number of k points sampled. '
-                      'KPOINTS=-1 implies no limit.')
+                      help='Maximum number of points used to sample k-space. '
+                      'Puts an approximate upper bound by randomly de-selecting '
+                      'points. Default value is 40000, KPOINTS=-1 implies no limit.')
+    parser.add_option('','--k-max', metavar='KMAX', type='float', default=60,
+                      help='Largest k-value to consider (in "2*pi*nm^-1"). '
+                      'Default value for KMAX is 60. ')
     parser.add_option('','--k-bins', metavar='BINS', type='int',
-                      default=80, help='Number of bins used along the k-axis for '
-                      'the final result.')
-    parser.add_option('','--k-max', metavar='KMAX', type='float', default=20,
-                      help='Largest inverse length to consider (in 2*pi*nm^-1)')
+                      default=80, 
+                      help='Number of "radial" bins to use (between 0 and KMAX). ')
+
+    parser.add_option('','--nt', metavar='TIME_CORR_STEPS', type='int',
+                      help='Determines the length of the trajectory frame window '
+                      'to use for time correlation calculation. '
+                      'TIME_CORR_STEPS is expressed in "number of frames" and '
+                      'also determines the smallest frequency resolved. '
+                      'If no TIME_CORR_STEPS is provided, only static (t=0) '
+                      'correlations will be calculated')
     parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
                       default=0,
-                      help='Read no more than NFRAMES frames from trajectory file')
+                      help='Limits the total number of trajectory frames read '
+                      'to NFRAMES. '
+                      'Default value is 0 (meaning no limit).')
     parser.add_option('','--step', metavar='NSTEP', type='int', default=1,
                       help='Only use every (NSTEP)th trajectory frame. '
-                      'Default NSTEP is 1.')
+                      'Default NSTEP is 1, meaning every frame. '
+                      'NSTEP affects dt and hence the smallest time resolved.')
     parser.add_option('','--stride', metavar='NSTRIDE', type='int', default=1,
-                      help='Stride NSTRIDE frames inbetween nc.')
-    parser.add_option('-v', '--verbose', action='store_true', 
+                      help='Stride NSTRIDE frames between considered trajectory '
+                      'windows. This does not affect dt. '
+                      'If e.g. NSTRIDE > TIME_CORR_STEPS, some frames will '
+                      'be completely unused.')
+    parser.add_option('', '--quiet', action='store_false', 
                       default=False,
-                      help='Verbose output')
+                      help='Be quite ...')
 
     (options, args) = parser.parse_args()
     if not options.f:
@@ -95,7 +122,7 @@ if __name__ == '__main__':
         print('A trajectory must be specified with option -f')
         sys.exit(1)
 
-    iframe = get_itraj(options.f, step=options.step)
+    iframe = get_itraj(options.f, index_file=options.n, step=options.step)
     
     f0, f1 = islice(iframe, 2)
     delta_t = f1['time'] - f0['time']
@@ -107,33 +134,34 @@ if __name__ == '__main__':
     else:
         calculate_current = False
 
-    if options.verbose: 
-        print('delta_t found to be %f [fs] --> f_max = %f [THz]' % \
-                  (delta_t, 1.0/delta_t))
-
-    
-    if options.nc:
-        assert(options.nc >= 1)
-        N_tc = options.nc + (options.nc+1)%2
+    if options.nt:
+        assert(options.nt >= 1)
+        N_tc = options.nt + (options.nt+1)%2
     else:
         N_tc = 1
 
-    if options.verbose:
+    verbose = not options.quiet
+    if verbose: 
+        print('Trajectory file = %s' % options.f)
+        print('  With a total of %i particles' % f0['N'])
         if N_tc > 1:
-            tc = delta_t*(N_tc-1)
-            print('tc is %f [ps] --> f_min = %f [THz]' % \
-                      (tc, 1.0/tc))
-            print('0..f_max covered by %i points' % N_tc)
+            print('  delta_t found to be %f [fs], time window %f [fs]' % \
+                      (delta_t, delta_t*options.nt))
+            dE = 2.0*hbar*np.pi*1e15/(options.nt*delta_t)
+            print('  delta_E, max_E = %f, %f [eV]' % \
+                      (dE, dE*options.nt))
 
-    if options.verbose:
-        print('Simulation box = \n%s' % str(reference_box))
+
+    if verbose:
+        print('  Simulation box=\n%s' % str(reference_box))
 
     rec = reciprocal(reference_box, N_max=options.Nk, k_max=options.k_max,
-                     debug=options.verbose)
+                     debug=verbose)
                      
-    if options.verbose:
-        print('Nk points = %i' % len(rec.qdist))
-        print('k_max = %f --> x_min = %f' % (options.k_max, 1.0/options.k_max))
+    if verbose:
+        print('  Nk points = %i' % len(rec.kdist))
+        print('  k_max = %f --> x_min = %f [nm]' % \
+                  (options.k_max, 2.0*np.pi/options.k_max))
 
     
     assert options.stride > 0
