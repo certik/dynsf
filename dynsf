@@ -52,7 +52,7 @@ class averager:
     def get_av(self):
         return np.array([self.get_single_av(i) for i in range(self._N)])
 
-hbar = 6.58211928e-16 # eV s
+hbar = 6.58211928e-1 # eV fs
         
 
 if __name__ == '__main__':
@@ -162,7 +162,7 @@ if __name__ == '__main__':
         if N_tc > 1:
             print('  delta_t found to be %f [fs], time window %f [fs]' % \
                       (delta_t, delta_t*options.nt))
-            dE = 2.0*hbar*np.pi*1e15/(options.nt*delta_t)
+            dE = 2.0*hbar*np.pi/(options.nt*delta_t)
             print('  delta_E, max_E = %f, %f [eV]' % \
                       (dE, dE*options.nt))
 
@@ -197,7 +197,7 @@ if __name__ == '__main__':
     Ntypes = len(particle_types)
     mij_list = [(m.next(),i,j) 
                 for i in range(Ntypes) for j in range(i,Ntypes)]
-    type_pairs = [particle_types[i]+'-'+particle_types[j] for _, i, j in mij_list]
+    pair_types = [particle_types[i]+'-'+particle_types[j] for _, i, j in mij_list]
 
     z = np.zeros(len(rec.qdist))
     F_k_t_avs = [averager(N_tc, z) for _ in mij_list]
@@ -230,6 +230,7 @@ if __name__ == '__main__':
     for wind in itraj_window:
         foreach(curry(calc_corr, wind), range(len(wind)), threads=8)
 
+    print("") #kludge
 
                 
     F_k_t_full = [F_k_t_avs[m].get_av() for m, _, _ in mij_list]
@@ -272,20 +273,25 @@ if __name__ == '__main__':
     out_names = []
     out_desc = []
 
-    out_vars += [k, t, F_k_t]
-    out_names += ['k', 't', 'F_k_t']
-    out_desc += ['k-values', 'time-values', 
-                 'Intermediate scattering function [time, k]']
+    out_vars += [k, t]
+    out_names += ['k', 't']
+    out_desc += ['k-values (actually bin centers) [nm^1]', 'time-values [fs]']
+    for m,_,_ in mij_list:
+        out_vars += [F_k_t[m]]
+        out_names += ['F_k_t_%i'%m]
+        out_desc += ['Intermediate scattering function [time, k] (%s)' % pair_types[m]]
 
     if len(t) > 2:
         w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in mij_list])
         w = w[0]
 
-        out_vars += [w, hbar*w]
-        out_names += ['w', 'E', 'S_k_w']
-        out_desc += ['omega-vales', 'energy-values',
-                     'dynamical structure factor [w, k]']
-
+        out_vars += [w, (hbar*w)]
+        out_names += ['w', 'E']
+        out_desc += ['omega [fs^-1]', 'energy [eV]']
+        for m,_,_ in mij_list:
+            out_vars += [S_k_w[m]]
+            out_names += ['S_k_w_%i'%m]
+            out_desc += ['Dynamical structure factor [time, k] (%s)' % pair_types[m]]
     
     if options.om:
         from dsf.output import mfile

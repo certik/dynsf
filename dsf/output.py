@@ -21,7 +21,7 @@ __all__ = ['mfile']
 import numpy as np
 
 def mfile(filename, vars, names, descs):
-    with open(filename, 'w') as fh:
+    with open(filename, 'w') as f:
         for v, n, desc in zip(vars, names, descs):
-            f.write("%% %s\n%s = %s\n" % (desc, n, str(v)))
+            f.write("\n%% %s\n%s = \\\n%s\n" % (desc, n, str(v)))
 
