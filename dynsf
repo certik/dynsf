@@ -51,64 +51,79 @@ class averager:
         return f*self._data[slot]
     def get_av(self):
         return np.array([self.get_single_av(i) for i in range(self._N)])
+
+hbar = 6.58211928e-16 # eV s
         
 
 if __name__ == '__main__':
     import sys
     import optparse
 
-    hbar = 6.58211928e-16
-
     parser = optparse.OptionParser()
-    parser.add_option('-f', '', metavar='TRAJECTORY_FILE',
-                      help='Trajectory file in xtc or lammps-dump format. '
-                      'Which format is considered is decided from the file name '
-                      'suffix. ".xtc" implies xtc-format, ".trj", ".trj.bz2", and '
-                      '".trj.gz" implies a lammps-dump file. '
-                      'The number of atoms must be constant throughout the '
-                      'trajectory, and the simulation box should be fixed.')
-    parser.add_option('-n', '', metavar='INDEX_FILE',
-                      help='Optional index file (think Gromacs INI-style) for '
-                      'specifying atom types. Atoms are indexed from 1 up to N '
-                      '(total number of atoms). '
-                      'It is possible to index only a sub set of all atoms, and '
-                      'atoms can be indexed in more than one group. '
-                      'If no INDEX_FILE is provided, all atoms will be '
-                      'considered identical.')
+    iogroup = optparse.OptionGroup(parser,
+                                   'Input/output options',
+                                   'Options controlling input and output')
+    iogroup.add_option('-f', '', metavar='TRAJECTORY_FILE',
+                       help='Trajectory file in xtc or lammps-dump format. '
+                       'Which format is considered is decided from the file name '
+                       'suffix. ".xtc" implies xtc-format, ".trj", ".trj.bz2", and '
+                       '".trj.gz" implies a lammps-dump file. '
+                       'The number of atoms must be constant throughout the '
+                       'trajectory, and the simulation box should be fixed.')
+    iogroup.add_option('-n', '', metavar='INDEX_FILE',
+                       help='Optional index file (think Gromacs INI-style) for '
+                       'specifying atom types. Atoms are indexed from 1 up to N '
+                       '(total number of atoms). '
+                       'It is possible to index only a sub set of all atoms, and '
+                       'atoms can be indexed in more than one group. '
+                       'If no INDEX_FILE is provided, all atoms will be '
+                       'considered identical.')
+    iogroup.add_option('', '--om', metavar='MFILE',
+                       help='Write output as an m-file.')
+    parser.add_option_group(iogroup)
 
-    parser.add_option('','--Nk', metavar='KPOINTS', type='int',
+    kgroup = optparse.OptionGroup(parser,
+                                  'k-point options',
+                                  'Options controlling k-point related parameters, i.e. things '
+                                  'affecting spacial and reciprocal resolutions and limits.')
+    kgroup.add_option('','--Nk', metavar='KPOINTS', type='int',
                       default=40000,
                       help='Maximum number of points used to sample k-space. '
                       'Puts an approximate upper bound by randomly de-selecting '
                       'points. Default value is 40000, KPOINTS=-1 implies no limit.')
-    parser.add_option('','--k-max', metavar='KMAX', type='float', default=60,
+    kgroup.add_option('','--k-max', metavar='KMAX', type='float', default=60,
                       help='Largest k-value to consider (in "2*pi*nm^-1"). '
                       'Default value for KMAX is 60. ')
-    parser.add_option('','--k-bins', metavar='BINS', type='int',
+    kgroup.add_option('','--k-bins', metavar='BINS', type='int',
                       default=80, 
                       help='Number of "radial" bins to use (between 0 and KMAX). ')
+    parser.add_option_group(kgroup)
 
-    parser.add_option('','--nt', metavar='TIME_CORR_STEPS', type='int',
+    tgroup = optparse.OptionGroup(parser, 'Time-related options',
+                                  'Options controlling timestep, length of time window, etc.')
+    tgroup.add_option('','--nt', metavar='TIME_CORR_STEPS', type='int',
                       help='Determines the length of the trajectory frame window '
                       'to use for time correlation calculation. '
                       'TIME_CORR_STEPS is expressed in "number of frames" and '
                       'also determines the smallest frequency resolved. '
                       'If no TIME_CORR_STEPS is provided, only static (t=0) '
                       'correlations will be calculated')
-    parser.add_option('','--max-frames', metavar='NFRAMES', type='int',
+    tgroup.add_option('','--max-frames', metavar='NFRAMES', type='int',
                       default=0,
                       help='Limits the total number of trajectory frames read '
                       'to NFRAMES. '
                       'Default value is 0 (meaning no limit).')
-    parser.add_option('','--step', metavar='NSTEP', type='int', default=1,
+    tgroup.add_option('','--step', metavar='NSTEP', type='int', default=1,
                       help='Only use every (NSTEP)th trajectory frame. '
                       'Default NSTEP is 1, meaning every frame. '
                       'NSTEP affects dt and hence the smallest time resolved.')
-    parser.add_option('','--stride', metavar='NSTRIDE', type='int', default=1,
+    tgroup.add_option('','--stride', metavar='NSTRIDE', type='int', default=1,
                       help='Stride NSTRIDE frames between considered trajectory '
                       'windows. This does not affect dt. '
                       'If e.g. NSTRIDE > TIME_CORR_STEPS, some frames will '
                       'be completely unused.')
+    parser.add_option_group(tgroup)
+
     parser.add_option('', '--quiet', action='store_false', 
                       default=False,
                       help='Be quite ...')
@@ -211,7 +226,7 @@ if __name__ == '__main__':
                 F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] * 
                                                 fi['rho_ks'][j].conjugate())
             
-
+    # This is the "main loop"
     for wind in itraj_window:
         foreach(curry(calc_corr, wind), range(len(wind)), threads=8)
 
@@ -222,7 +237,7 @@ if __name__ == '__main__':
         Cl_k_t_full = [Cl_k_t_avs[m].get_av() for m, _, _ in mij_list]
         Ct_k_t_full = [Ct_k_t_avs[m].get_av() for m, _, _ in mij_list]
 
-    # simple smoothing using radially distributed bins
+    # simple smoothing using 'radial' bins
     pts = options.k_bins
     max_k = options.k_max
     delta_k = max_k / pts
@@ -253,8 +268,26 @@ if __name__ == '__main__':
                     Ct_k_t[m][:,i] = np.mean(s, axis=1)
                 ci += n
 
+    out_vars = []
+    out_names = []
+    out_desc = []
+
+    out_vars += [k, t, F_k_t]
+    out_names += ['k', 't', 'F_k_t']
+    out_desc += ['k-values', 'time-values', 
+                 'Intermediate scattering function [time, k]']
+
     if len(t) > 2:
         w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in mij_list])
         w = w[0]
 
+        out_vars += [w, hbar*w]
+        out_names += ['w', 'E', 'S_k_w']
+        out_desc += ['omega-vales', 'energy-values',
+                     'dynamical structure factor [w, k]']
+
     
+    if options.om:
+        from dsf.output import mfile
+        mfile(options.om, out_vars, out_names, out_desc)
+
