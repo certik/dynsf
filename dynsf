@@ -228,7 +228,7 @@ if __name__ == '__main__':
             
     # This is the "main loop"
     for wind in itraj_window:
-        foreach(curry(calc_corr, wind), range(len(wind)), threads=8)
+        foreach(curry(calc_corr, wind), xrange(len(wind)), threads=8)
 
     print("") #kludge
 
@@ -269,31 +269,24 @@ if __name__ == '__main__':
                     Ct_k_t[m][:,i] = np.mean(s, axis=1)
                 ci += n
 
-    out_vars = []
-    out_names = []
-    out_desc = []
-
-    out_vars += [k, t]
-    out_names += ['k', 't']
-    out_desc += ['k-values (actually bin centers) [nm^1]', 'time-values [fs]']
-    for m,_,_ in mij_list:
-        out_vars += [F_k_t[m]]
-        out_names += ['F_k_t_%i'%m]
-        out_desc += ['Intermediate scattering function [time, k] (%s)' % pair_types[m]]
+    output = []
+    output += [(k, 'k', 'k-values (actually bin centers) [nm^1]'),
+               (t, 't', 'time values [fs]')]
+    output += [(F_k_t[m], 'F_k_t_%i'%m,
+                'Intermediate scattering function [time, k] (%s)' % pair_types[m])
+               for m,_,_ in mij_list]
 
     if len(t) > 2:
         w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in mij_list])
         w = w[0]
 
-        out_vars += [w, (hbar*w)]
-        out_names += ['w', 'E']
-        out_desc += ['omega [fs^-1]', 'energy [eV]']
-        for m,_,_ in mij_list:
-            out_vars += [S_k_w[m]]
-            out_names += ['S_k_w_%i'%m]
-            out_desc += ['Dynamical structure factor [time, k] (%s)' % pair_types[m]]
-    
+        output += [(w, 'w', 'omega [fs^-1]'),
+                   (hbar*w, 'E', 'energy [eV]')]
+        output += [(S_k_w[m], 'S_k_w_%i'%m,
+                    'Dynamical structure factor [time, k] (%s)' % pair_types[m])
+                   for m,_,_ in mij_list]
+        
     if options.om:
-        from dsf.output import mfile
-        mfile(options.om, out_vars, out_names, out_desc)
+        from dsf.output import create_mfile
+        mfile(options.om, output)
 

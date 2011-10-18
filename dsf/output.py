@@ -16,12 +16,12 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-__all__ = ['mfile']
+__all__ = ['create_mfile']
 
 import numpy as np
 
-def mfile(filename, vars, names, descs):
+def create_mfile(filename, output):
     with open(filename, 'w') as f:
-        for v, n, desc in zip(vars, names, descs):
+        for v, n, desc in output:
             f.write("\n%% %s\n%s = \\\n%s\n" % (desc, n, str(v)))
 
