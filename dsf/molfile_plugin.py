@@ -17,10 +17,12 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-__all__ = ['MolfilePlugin', 'PLUGIN_TRAJECTORY_MAPPING']
+__all__ = ['MolfilePlugin', 'TRAJECTORY_PLUGIN_MAPPING',
+           'molfile_timestep_t', 'molfile_atom_t', 'molfile_plugin_t']
 
 import os
 from sysconfig import get_config_var
+from itertools import islice
 
 from ctypes import cdll, CDLL, RTLD_GLOBAL, \
     POINTER as PTR, CFUNCTYPE as CFT, \
@@ -41,7 +43,7 @@ c_float_pp = PTR(c_float_p)
 
 #
 # As of molfile_plugin abiversion 16, the following trajectory 
-# formats are supported:
+# formats are supported (pasted from the AMD web page):
 #
 # Molecular Dynamics Trajectory File Plugins
 #
@@ -60,8 +62,8 @@ c_float_pp = PTR(c_float_p)
 #     XYZ trajectory files (.xyz) 
 #
 
-PLUGIN_TRAJECTORY_MAPPING = (
-    #(SOFTWARE, TYPE, SUFFIX, PLUGIN)
+TRAJECTORY_PLUGIN_MAPPING = (
+    #(SOFTWARE-NAME, FILE-TYPE, FILE-SUFFIX, PLUGIN-NAME)
     ('AMBER',   '"binpos"',       'binpos',   'binposplugin'),
     ('AMBER',   '"CRD"',          'crd',      'crdplugin'), 
     ('AMBER',   'NetCDF',         'nc',       'netcdfplugin'),
@@ -77,11 +79,31 @@ PLUGIN_TRAJECTORY_MAPPING = (
     ('VTF',     'VTF trajectory',  'vtf',     'vtfplugin'),
     ('XCrySDen','XSF trajectory',  'xsf',     'xsfplugin'),
     ('XCrySDen','AXSF trajectory', 'axsf',    'xsfplugin'),
-    ('',        'XYZ trajectory',  'xyz',     'xyzplugin'))
+    ('?',       'XYZ trajectory',  'xyz',     'xyzplugin'))
 
 
-PLUGIN_DIR = '/home/slabanja/opt/vmd/1.9.0/lib/plugins/LINUXAMD64/molfile'
 
+
+def find_plugin_dir():
+    # somewhat lengthyish way of finding the plugins
+    rel_path = 'plugins/LINUXAMD64/molfile'
+    if 'VMDDIR' in os.environ:
+        return os.path.join(os.environ['VMDDIR'], rel_path)
+    else:
+        import re
+        for d in os.environ['PATH'].split(os.pathsep):
+            f = os.path.join(d, 'vmd')
+            if os.path.exists(f):
+                with open(f, 'r') as fh:
+                    for L in islice(fh, 10):
+                        m = re.match(r'^defaultvmddir=(?:"(/.*)"|(/[^# ]*)).*$', L) 
+                        if m:
+                            a,b = m.groups()
+                            return os.path.join(a or b, rel_path)
+    return None
+
+MOLFILE_PLUGIN_DIR = find_plugin_dir()
+MIN_ABI_VERSION = 15
 
 MOLFILE_PLUGIN_TYPE = "mol file reader"
 VMDPLUGIN_SUCCESS = 0
@@ -271,8 +293,28 @@ vmdplugin_register_cb_t = CFT(c_int, c_void_p, PTR(vmdplugin_t))
 
 
 class MolfilePlugin:
-    def __init__(self, plugin_name, plugin_dir=''):
-        
+    """A thin molfile_plugin wrapper class
+
+    This class holds the loaded plugin-library and sets up
+    a molfile_plugin_t structure.
+    The initialization should be called with the name of the
+    plugin, without any filetype suffix (i.e., without the '.so').
+    Optionally, an explicit path for the plugin files can be
+    provided.
+    The mapping provided through the tuples in 
+    TRAJECTORY_PLUGIN_MAPPING can be useful to figure out the
+    right pluginname.
+
+    A call to the class method 'close', calls the plugin fini-function.
+    """
+    def __init__(self, plugin_name, plugin_dir=MOLFILE_PLUGIN_DIR):
+
+        if plugin_dir is None:
+            raise RuntimeError("The provided plugindir is None, "\
+                               "couldn't find any plugins. "\
+                               "Do you have vmd in your PATH, or is VMDDIR "\
+                               "correctly set?")
+
         plugin_name += get_config_var('SO')
         fn = os.path.join(plugin_dir, plugin_name)
         lib = cdll.LoadLibrary(fn)
@@ -283,14 +325,14 @@ class MolfilePlugin:
         
         lib.vmdplugin_init.restype = c_int
         lib.vmdplugin_fini.restype = c_int
-        lib.vmdplugin_register.restype = c_int    
+        lib.vmdplugin_register.restype = c_int
         lib.vmdplugin_register.argtypes = (c_void_p, vmdplugin_register_cb_t)
 
         plugin_p = pointer(molfile_plugin_t(0))
         def py_reg_cb(v, p):
             pc = p.contents
             if pc.type == MOLFILE_PLUGIN_TYPE:
-                if pc.abiversion >= 15:
+                if pc.abiversion >= MIN_ABI_VERSION:
                     plugin_p.contents = cast(p, PTR(molfile_plugin_t)).contents
             return VMDPLUGIN_SUCCESS
 
@@ -308,51 +350,8 @@ class MolfilePlugin:
         self._lib.vmdplugin_fini()
 
 
-
-
-#def test(filename, plugin):
-
-#filename = '/home/slabanja/lammps/SPC-E-case/bild/dump_all.lammpstrj'
-#plugin = 'lammpsplugin'
-
-#filename = 'test.lammpstrj'
-#plugin = 'lammpsplugin'
-
-#filename = '/home/slabanja/lammps/SPC-E-case/T250-run/dump_all_10fs.xtc'
-#plugin = 'gromacsplugin'
-
-
-# mfile = MolfilePlugin(plugin)
-# N = c_int()
-# suffix = filename.rsplit('.',1)[-1]
-# handle = mfile.plugin.open_file_read(filename, suffix, byref(N))
-# if not handle:
-#     print("Failed to open file")
-#     import sys
-#     sys.exit(1)
-    
-# if mfile.plugin.read_structure:
-#     atoms = (molfile_atom_t*N.value)()
-#     optflags = c_int()
-#     rc = mfile.plugin.read_structure(handle, byref(optflags), atoms)
-#     print rc
-
-# if mfile.plugin.read_next_timestep:
-#     ts = molfile_timestep_t()
-#     ts.coords = (c_float*(3*N.value))()
-#     ts.velocities = (c_float*(3*N.value))()
-
-#     ts.coords[0]=3.141
-#     ts.velocities[0]=1.234
-#     rc = mfile.plugin.read_next_timestep(handle, N, byref(ts))
-#     print rc
-#     rc = mfile.plugin.read_next_timestep(handle, N, byref(ts))
-#     print rc
-# #    rc = mfile.plugin.read_next_timestep(handle, N, byref(ts))
-# #    print rc
-# #return ts  
   
 if __name__ == '__main__':
-    for _,_,ext,pn in PLUGIN_TRAJECTORY_MAPPING:
+    for _,_,ext,pn in TRAJECTORY_PLUGIN_MAPPING:
         p = MolfilePlugin(pn)
-        print("%s  %s  %s" % (pn, ext, p.plugin.filename_extension)) #.filename_extension))
+        print("%s  %s  %s" % (pn, ext, p.plugin.filename_extension))

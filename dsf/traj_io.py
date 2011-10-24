@@ -18,15 +18,19 @@
 
 __all__ = ['get_itraj', 'iwindow', 'XTC_reader', 'TRJ_reader', 'read_ndx_file']
 
-from ctypes import cdll, byref, c_int, c_float, c_char_p, POINTER
-from ctypes.util import find_library
+import numpy as np
+import re
+import sys
+
+from dsf.molfile_plugin import MolfilePlugin, TRAJECTORY_PLUGIN_MAPPING, \
+    molfile_timestep_t, molfile_atom_t, MOLFILE_PLUGIN_DIR
+
 from itertools import islice, imap
 from os.path import isfile
 from collections import deque
 
-import numpy as np
-import re
-import sys
+from ctypes import cdll, byref, c_int, c_float, c_char_p, POINTER
+from ctypes.util import find_library
 
 class curry:
     def __init__(self, fun, *args, **kwargs):
@@ -171,7 +175,8 @@ if libgmx:
 class XTC_reader:
     """Iterable object
 
-    Iterate through the frames of an xtc-file.
+    Iterate through the frames of an xtc-file using libgmx and ctypes.
+
     Each frame is represented as a dictionary.
     {'N': number of atoms,
      'box': simulation box as 3 row vectors (nm),
@@ -278,7 +283,10 @@ class XTC_reader:
 
 
 class TRJ_reader:
-    """Read LAMMPS trajectory file, naive (and slow) implementation
+    """Read LAMMPS trajectory file 
+
+    This is a naive (and comparatively slow) implementation, 
+    written entirely in python.
     """
     def __init__(self, filename, index_file=None, 
                  x_factor=1.0, t_factor=1.0):
@@ -450,6 +458,32 @@ class TRJ_reader:
         return res
 
 
+class molfile_reader:
+    """Read a trajectory using the molfile_plugin package
+
+    molfile_plugin is a part of VMD, and consists of
+    a plugins for a fairly large number of different trajectory
+    formats (see molfile_plugin.TRAJECTORY_PLUGIN_MAPPING).
+
+    filename - string, filename of trajectory file.
+    index_file - string, filename of ini-style index file.
+    plugin - string, name of plugin to use. If None, guess
+             pluginname by looking at filename suffix.
+    """
+    def __init__(self, filename, index_file=None, plugin=None):
+        if plugin is None:
+            suffix = filename.rsplit('.', 1)
+            for _,_,sfx,plg in TRAJECTORY_PLUGIN_MAPPING:
+                if sfx == suffix:
+                    plugin = plg
+                    break
+        if plugin is None:
+            raise RuntimeError('No suitable plugin known for file %s' % filename)
+
+    def __iter__(self):
+        pass
+    def next(self):
+        pass
 
 
 def read_ndx_file(filename):
