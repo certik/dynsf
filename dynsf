@@ -289,7 +289,7 @@ if __name__ == '__main__':
                 ci += n
 
     output = []
-    output += [(k, 'k', 'k-values (actually bin centers) [nm^1]'),
+    output += [(k, 'k', 'k-values (actually, bin centers) [nm^1]'),
                (t, 't', 'time values [fs]')]
     output += [(F_k_t[m], 'F_k_t_%i'%m,
                 'Intermediate scattering function [time, k] (%s)' % pair_types[m])

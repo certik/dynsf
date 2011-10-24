@@ -3,10 +3,17 @@
 from distutils.core import setup
 from distutils.extension import Extension
 
-rho_j_k_ext = Extension('dsf._rho_j_k', 
-                        sources=['src/_rho_j_k.c'],
-                        extra_compile_args=['-fopenmp', '-O3'],
-                        extra_link_args=['-fopenmp'])
+rho_j_k_d_ext = Extension('dsf._rho_j_k_d', 
+                          sources=['src/_rho_j_k.c'],
+                          extra_compile_args=['-fopenmp', '-O3',
+                                              '-DRHOPREC=double'],
+                          extra_link_args=['-fopenmp'])
+
+rho_j_k_s_ext = Extension('dsf._rho_j_k_s', 
+                           sources=['src/_rho_j_k.c'],
+                           extra_compile_args=['-fopenmp', '-O3',
+                                               '-DRHOPREC=float'],
+                           extra_link_args=['-fopenmp'])
 
 
 setup(name = 'python-dynsf',
@@ -15,7 +22,8 @@ setup(name = 'python-dynsf',
       author = 'Mattias Slabanja',
       author_email = 'slabanja@chalmers.se',
       packages = ['dsf'],
-      ext_modules = [rho_j_k_ext],
+      ext_modules = [rho_j_k_d_ext,
+                     rho_j_k_s_ext],
       scripts = ['dynsf'],
       requires = ['numpy'],
       license      = "GPL2+",

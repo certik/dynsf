@@ -26,11 +26,12 @@ from ctypes import cdll, byref, c_int, c_float, POINTER
 
 np_ndp = np.ctypeslib.ndpointer
 
-_lib = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k.so'))
-_rho_k_d = _lib.rho_k
-_rho_j_k_d = _lib.rho_j_k
-#_rho_k_s = _lib.rho_k_s
-#_rho_j_k_s = _lib.rho_j_k_s
+_lib_d = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k_d.so'))
+_lib_s = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k_s.so'))
+_rho_k_d = _lib_d.rho_k
+_rho_j_k_d = _lib_d.rho_j_k
+_rho_k_s = _lib_s.rho_k_s
+_rho_j_k_s = _lib_s.rho_j_k_s
 
 ndp_f64_2d = np_ndp(dtype=np.float64, ndim=2, 
                     flags='f_contiguous, aligned')
@@ -53,12 +54,12 @@ _rho_k_d.argtypes =   [ndp_f64_2d, c_int,
                        ndp_f64_2d, c_int, 
                        ndp_c128_1d]
 
-#_rho_j_k_s.argtypes = [ndp_f32_2d, ndp_f32_2d, c_int, 
-#                       ndp_f32_2d, c_int,
-#                       ndp_c64_1d, ndp_c64_2d]
-#_rho_k_s.argtypes =   [ndp_f32_2d, c_int, 
-#                       ndp_f32_2d, c_int, 
-#                       ndp_c64_1d]
+_rho_j_k_s.argtypes = [ndp_f32_2d, ndp_f32_2d, c_int, 
+                       ndp_f32_2d, c_int,
+                       ndp_c64_1d, ndp_c64_2d]
+_rho_k_s.argtypes =   [ndp_f32_2d, c_int, 
+                       ndp_f32_2d, c_int, 
+                       ndp_c64_1d]
 
 def calc_rho_k(x, k):
     x = np.require(x, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])

@@ -19,7 +19,9 @@
 
 #include <math.h>
 
+#ifndef RHOPREC
 #define RHOPREC double
+#endif
 
 void rho_k(RHOPREC x_vec[][3], int N_x, 
 	   RHOPREC k_vec[][3], int N_k,
