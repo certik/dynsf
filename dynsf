@@ -31,6 +31,7 @@ from dsf.reciprocal import reciprocal
 import dsf.filon as filon
 
 from dsf.handythread import foreach
+from multiprocessing import cpu_count
 
 class averager:
     # Special purpose averager class
@@ -124,9 +125,14 @@ if __name__ == '__main__':
                       'be completely unused.')
     parser.add_option_group(tgroup)
 
+    parser.add_option('', '--threads', type='int', default=0,
+                      help='Number of threads to use. '
+                      'The default value is taken from OMP_NUM_THREADS if it is set, '
+                      'otherwise it is set to the number of available "cpus".')
     parser.add_option('', '--quiet', action='store_false', 
                       default=False,
                       help='Be quite ...')
+    
 
     (options, args) = parser.parse_args()
     if not options.f:
@@ -136,6 +142,19 @@ if __name__ == '__main__':
     if options.f is None:
         print('A trajectory must be specified with option -f')
         sys.exit(1)
+
+    if options.threads != 0:
+        num_threads = options.threads
+    elif 'OMP_NUM_THREADS' in os.environ:
+        num_threads = int(os.environ['OMP_NUM_THREADS'])
+    else:
+        num_threads = cpu_count()
+    if num_threads < 1:
+        print('Number of threads must be > 1')
+        sys.exit(1)
+            
+    os.environ['OMP_NUM_THREADS'] = str(num_threads)
+
 
     iframe = get_itraj(options.f, index_file=options.n, step=options.step)
     
@@ -228,7 +247,7 @@ if __name__ == '__main__':
             
     # This is the "main loop"
     for wind in itraj_window:
-        foreach(curry(calc_corr, wind), xrange(len(wind)), threads=8)
+        foreach(curry(calc_corr, wind), xrange(len(wind)), threads=num_threads)
 
     print("") #kludge
 
