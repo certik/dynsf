@@ -24,62 +24,52 @@ from os.path import dirname, join
 import numpy as np
 from ctypes import cdll, byref, c_int, c_float, POINTER
 
+
+np_f = {'d' : np.float64, 's' : np.float32}
+np_c = {'d' : np.complex128, 's' : np.complex64}
 np_ndp = np.ctypeslib.ndpointer
 
-_lib_d = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k_d.so'))
-_lib_s = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k_s.so'))
-_rho_k_d = _lib_d.rho_k
-_rho_j_k_d = _lib_d.rho_j_k
-_rho_k_s = _lib_s.rho_k_s
-_rho_j_k_s = _lib_s.rho_j_k_s
+_lib = {}
+_rho_k = {}
+_rho_j_k = {}
 
-ndp_f64_2d = np_ndp(dtype=np.float64, ndim=2, 
-                    flags='f_contiguous, aligned')
-ndp_c128_1d = np_ndp(dtype=np.complex128, ndim=1, 
-                     flags='f_contiguous, aligned, writeable')
-ndp_c128_2d = np_ndp(dtype=np.complex128, ndim=2, 
-                     flags='f_contiguous, aligned, writeable')
+ndp_f_2d_r = {}
+ndp_c_1d_rw = {}
+ndp_c_2d_rw = {}
+for t in "ds":
+    ndp_f_2d_r[t] = np_ndp(dtype=np_f[t], ndim=2, flags='f_contiguous, aligned')
+    ndp_c_1d_rw[t] = np_ndp(dtype=np_c[t], ndim=1, 
+                            flags='f_contiguous, aligned, writeable')
+    ndp_c_2d_rw[t] = np_ndp(dtype=np_c[t], ndim=2, 
+                            flags='f_contiguous, aligned, writeable')
 
-ndp_f32_2d = np_ndp(dtype=np.float32, ndim=2, 
-                    flags='f_contiguous, aligned')
-ndp_c64_1d = np_ndp(dtype=np.complex64, ndim=1, 
-                    flags='f_contiguous, aligned, writeable')
-ndp_c64_2d = np_ndp(dtype=np.complex64, ndim=2, 
-                    flags='f_contiguous, aligned, writeable')
+    _lib[t] = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k_%s.so' % t))
+    _lib[t].rho_k.argtypes = (ndp_f_2d_r[t], c_int, 
+                              ndp_f_2d_r[t], c_int, 
+                              ndp_c_1d_rw[t])
+    _lib[t].rho_j_k.argtypes = (ndp_f_2d_r[t], ndp_f_2d_r[t], c_int, 
+                                ndp_f_2d_r[t], c_int,
+                                ndp_c_1d_rw[t], ndp_c_2d_rw[t])
 
-_rho_j_k_d.argtypes = [ndp_f64_2d, ndp_f64_2d, c_int, 
-                       ndp_f64_2d, c_int,
-                       ndp_c128_1d, ndp_c128_2d]
-_rho_k_d.argtypes =   [ndp_f64_2d, c_int, 
-                       ndp_f64_2d, c_int, 
-                       ndp_c128_1d]
-
-_rho_j_k_s.argtypes = [ndp_f32_2d, ndp_f32_2d, c_int, 
-                       ndp_f32_2d, c_int,
-                       ndp_c64_1d, ndp_c64_2d]
-_rho_k_s.argtypes =   [ndp_f32_2d, c_int, 
-                       ndp_f32_2d, c_int, 
-                       ndp_c64_1d]
-
-def calc_rho_k(x, k):
-    x = np.require(x, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    k = np.require(k, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
+def calc_rho_k(x, k, ftype='d'):
+    x = np.require(x, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
+    k = np.require(k, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
     _, Nx = x.shape
     _, Nk = k.shape
-    rho_k = np.zeros((Nk,), dtype=np.complex128, order='F')
-    _rho_k_d(x, Nx, k, Nk, rho_k)
+    rho_k = np.zeros((Nk,), dtype=np_c[ftype], order='F')
+    _lib[ftype].rho_k(x, Nx, k, Nk, rho_k)
     return rho_k
 
-def calc_rho_j_k(x, v, k):
+def calc_rho_j_k(x, v, k, ftype='d'):
     assert x.shape == v.shape
-    x = np.require(x, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    v = np.require(v, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
-    k = np.require(k, np.float64, ['F_CONTIGUOUS', 'ALIGNED'])
+    x = np.require(x, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
+    v = np.require(v, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
+    k = np.require(k, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
     _, Nx = x.shape
     _, Nk = k.shape
-    rho_k = np.zeros((Nk,), dtype=np.complex128, order='F')
-    j_k = np.zeros((3,Nk), dtype=np.complex128, order='F')
-    _rho_j_k_d(x, v, Nx, k, Nk, rho_k, j_k)
+    rho_k = np.zeros((Nk,), dtype=np_c[ftype], order='F')
+    j_k = np.zeros((3,Nk), dtype=np_c[ftype], order='F')
+    _lib[tfype].rho_j_k(x, v, Nx, k, Nk, rho_k, j_k)
     return rho_k, j_k
 
 

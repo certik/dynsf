@@ -57,6 +57,7 @@ hbar = 6.58211928e-1 # eV fs
         
 
 if __name__ == '__main__':
+    import os
     import sys
     import optparse
 
@@ -307,5 +308,5 @@ if __name__ == '__main__':
         
     if options.om:
         from dsf.output import create_mfile
-        mfile(options.om, output)
+        create_mfile(options.om, output)
 
