@@ -76,7 +76,7 @@ def calc_rho_j_k(x, v, k, ftype='d'):
 
 
 class reciprocal:
-    def __init__(self, box, N_max=-1, k_max=10.0, debug=False):
+    def __init__(self, box, N_max=-1, k_max=10.0, debug=False, ftype='d'):
         """Creates a set of reciprocal coordinates, and calculate rho_k/j_k 
         for a trajectory frame.
 
@@ -88,12 +88,17 @@ class reciprocal:
         and the shape of the box). 
 
         k_max should be the "physicist reciprocal length" (with 2*pi factor)
+
+        dtype can be either 'd' or 's' (double or single precission)
         """
         assert(N_max == -1 or N_max > 1000)
 
         self.k_max = k_max
         self.N_max = N_max
-        self.A = box.copy()
+
+        self.ftype = ftype
+        npftype = np_f[ftype]
+        self.A = np.require(box.copy(), npftype)
         # B is the "crystallographic" reciprocal vectors
         self.B = np.linalg.inv(self.A.transpose())
 
@@ -122,9 +127,9 @@ class reciprocal:
         b1, b2, b3 = [(2*np.pi)*x.reshape((3,1,1,1)) for x in self.B]
         Nk1, Nk2, Nk3 = [np.ceil(q_max/dq) for dq in q_mins]
         kvals = \
-            b1 * np.arange(Nk1, dtype=np.float64).reshape((1,Nk1,1,1)) + \
-            b2 * np.arange(Nk2, dtype=np.float64).reshape((1,1,Nk2,1)) + \
-            b3 * np.arange(Nk3, dtype=np.float64).reshape((1,1,1,Nk3))
+            b1 * np.arange(Nk1, dtype=npftype).reshape((1,Nk1,1,1)) + \
+            b2 * np.arange(Nk2, dtype=npftype).reshape((1,1,Nk2,1)) + \
+            b3 * np.arange(Nk3, dtype=npftype).reshape((1,1,1,Nk3))
         kvals = kvals.reshape((3, kvals.size/3))
         qdist = np.sqrt(np.sum(kvals**2, axis=0))*(1.0/(2*np.pi))
         I = np.nonzero(qdist<=q_max)[0]
@@ -147,13 +152,18 @@ class reciprocal:
         self.kdirect = kvals / (self.kdist.reshape((1,N)))
 
     def process_frame(self, frame):
+        """Add k-space density to frame
+
+        Calculate the density in k-space for dynsf-style trajectory frame.
+        """
         if self.debug: 
-            sys.stdout.write("processing frame at time = %f\r" % frame['time'])
+            sys.stdout.write("processing frame %i\r" % frame['step'])
             sys.stdout.flush()
 
         frame = frame.copy()
         if 'vs' in frame:
-            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.kvals) 
+            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.kvals,
+                                              ftype=self.ftype) 
                                  for x,v in zip(frame['xs'],frame['vs'])])
             jz_ks = [np.sum(j*self.kdirect, axis=0) for j in j_ks]
             frame['j_ks'] = j_ks
@@ -161,6 +171,8 @@ class reciprocal:
             frame['jpar_ks'] = [j-(jz*self.kdirect) for j,jz in zip(j_ks, jz_ks)]
             frame['rho_ks'] = rho_ks
         else:
-            frame['rho_ks'] = [calc_rho_k(x, self.kvals) for x in frame['xs']]
+            frame['rho_ks'] = [calc_rho_k(x, self.kvals, 
+                                          ftype=self.ftype) 
+                               for x in frame['xs']]
         return frame
 

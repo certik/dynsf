@@ -18,7 +18,13 @@
 # 02110-1301, USA.
 
 __all__ = ['MolfilePlugin', 'TRAJECTORY_PLUGIN_MAPPING',
-           'molfile_timestep_t', 'molfile_atom_t', 'molfile_plugin_t']
+           'molfile_timestep_t', 'molfile_timestep_metadata_t', 
+           'molfile_atom_t', 'molfile_plugin_t']
+
+__doc__ = """Molfile plugin interface
+
+Not much more than the necessary ctypes stuff.
+"""
 
 import os
 from sysconfig import get_config_var
@@ -84,9 +90,17 @@ TRAJECTORY_PLUGIN_MAPPING = (
 
 
 
-def find_plugin_dir():
+def find_molfile_plugin_dir():
     # somewhat lengthyish way of finding the plugins
-    rel_path = 'plugins/LINUXAMD64/molfile'
+    from platform import uname
+    system,_,_,_,machine,_ = uname()
+    rel_path = 'plugins/%s/molfile' % \
+        {('Linux', 'x86_64') : 'LINUXAMD64',
+         ('Linux', 'i386') : 'LINUX',
+         ('Darwin', 'x86_64') : 'MACOSXX86',
+         ('Darwin', 'i386') : 'MACOSXX86'}.get((system, machine),
+                                               'UNKNOWN')
+
     if 'VMDDIR' in os.environ:
         return os.path.join(os.environ['VMDDIR'], rel_path)
     else:
@@ -102,13 +116,12 @@ def find_plugin_dir():
                             return os.path.join(a or b, rel_path)
     return None
 
-MOLFILE_PLUGIN_DIR = find_plugin_dir()
+MOLFILE_PLUGIN_DIR = find_molfile_plugin_dir()
 MIN_ABI_VERSION = 15
 
 MOLFILE_PLUGIN_TYPE = "mol file reader"
 VMDPLUGIN_SUCCESS = 0
 VMDPLUGIN_ERROR = -1
-
 class vmdplugin_t(Structure):
     _fields_ = [('abiversion', c_int),
                 ('type', c_char_p),
@@ -149,9 +162,11 @@ class molfile_timestep_metadata_t(Structure):
                 ('has_velocities', c_int)]
 
 class molfile_qm_metadata_t(Structure):
+    # Left as an exercise to the reader
     pass
 
 class molfile_qm_timestep_t(Structure):
+    # Left as an exercise to the reader
     pass
 
 class molfile_timestep_t(Structure):
@@ -180,6 +195,9 @@ class molfile_volumetric_t(Structure):
 dummy_fun_t = CFT(c_int)
 class molfile_plugin_t(Structure):
     # ABI from molfile abiversion 16
+    # This is the important(TM) structure.
+    # Only partial read support is considered for now, other
+    # functions have been replaced by a dummy_fun_t placeholder.
     _fields_ = [('abiversion', c_int),
                 ('type', c_char_p),
                 ('name', c_char_p),
@@ -298,12 +316,12 @@ class MolfilePlugin:
     This class holds the loaded plugin-library and sets up
     a molfile_plugin_t structure.
     The initialization should be called with the name of the
-    plugin, without any filetype suffix (i.e., without the '.so').
+    plugin, without any library suffix (i.e., without any '.so').
     Optionally, an explicit path for the plugin files can be
-    provided.
+    provided (by default, MOLFILE_PLUGIN_DIR is used).
     The mapping provided through the tuples in 
-    TRAJECTORY_PLUGIN_MAPPING can be useful to figure out the
-    right pluginname.
+    TRAJECTORY_PLUGIN_MAPPING can be useful to figure out which
+    pluginname to use (but that is not taken care of in here).
 
     A call to the class method 'close', calls the plugin fini-function.
     """
@@ -315,9 +333,8 @@ class MolfilePlugin:
                                "Do you have vmd in your PATH, or is VMDDIR "\
                                "correctly set?")
 
-        plugin_name += get_config_var('SO')
-        fn = os.path.join(plugin_dir, plugin_name)
-        lib = cdll.LoadLibrary(fn)
+        lib = cdll.LoadLibrary(os.path.join(plugin_dir, 
+                                            plugin_name+get_config_var('SO')))
     
         # extern int vmdplugin_init(void);
         # extern int vmdplugin_fini(void);
@@ -336,9 +353,10 @@ class MolfilePlugin:
                     plugin_p.contents = cast(p, PTR(molfile_plugin_t)).contents
             return VMDPLUGIN_SUCCESS
 
-        vmdplugin_register_cb = vmdplugin_register_cb_t(py_reg_cb)
         if lib.vmdplugin_init() != VMDPLUGIN_SUCCESS:
             raise RuntimeError('Failed to init %s' % plugin_name)
+
+        vmdplugin_register_cb = vmdplugin_register_cb_t(py_reg_cb)
         if lib.vmdplugin_register(None, vmdplugin_register_cb) != VMDPLUGIN_SUCCESS:
             raise RuntimeError('Failed to register %s' % plugin_name)
 
@@ -354,4 +372,10 @@ class MolfilePlugin:
 if __name__ == '__main__':
     for _,_,ext,pn in TRAJECTORY_PLUGIN_MAPPING:
         p = MolfilePlugin(pn)
-        print("%s  %s  %s" % (pn, ext, p.plugin.filename_extension))
+        print("%-20s %-15s (%5s %5s %5s %5s)" % \
+                  (pn, p.plugin.filename_extension,
+                   bool(p.plugin.read_timestep),
+                   bool(p.plugin.read_timestep_metadata),
+                   bool(p.plugin.read_next_timestep),
+                   bool(p.plugin.read_structure)))
+        p.close()

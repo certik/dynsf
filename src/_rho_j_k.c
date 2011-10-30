@@ -20,6 +20,7 @@
 #include <math.h>
 
 #ifndef RHOPREC
+#warning "Defaulting to double precission"
 #define RHOPREC double
 #endif
 

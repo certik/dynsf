@@ -86,8 +86,9 @@ if __name__ == '__main__':
 
     kgroup = optparse.OptionGroup(parser,
                                   'k-point options',
-                                  'Options controlling k-point related parameters, i.e. things '
-                                  'affecting spacial and reciprocal resolutions and limits.')
+                                  'Options controlling k-point related parameters, '
+                                  'i.e. things affecting spacial and reciprocal '
+                                  'resolutions and limits.')
     kgroup.add_option('','--Nk', metavar='KPOINTS', type='int',
                       default=40000,
                       help='Maximum number of points used to sample k-space. '
@@ -102,7 +103,8 @@ if __name__ == '__main__':
     parser.add_option_group(kgroup)
 
     tgroup = optparse.OptionGroup(parser, 'Time-related options',
-                                  'Options controlling timestep, length of time window, etc.')
+                                  'Options controlling timestep, length of time '
+                                  'window, etc.')
     tgroup.add_option('','--nt', metavar='TIME_CORR_STEPS', type='int',
                       help='Determines the length of the trajectory frame window '
                       'to use for time correlation calculation. '
@@ -157,10 +159,16 @@ if __name__ == '__main__':
     os.environ['OMP_NUM_THREADS'] = str(num_threads)
 
 
-    iframe = get_itraj(options.f, index_file=options.n, step=options.step)
-    
-    f0, f1 = islice(iframe, 2)
+    f0, f1 = islice(get_itraj(options.f, 
+                              index_file=options.n, 
+                              step=options.step),
+                    2)
     delta_t = f1['time'] - f0['time']
+    if delta_t == 0.0:
+        print('Warning: Delta time is 0.0!')
+        print('         Defaulting to 1 fs [this will affect the output scale]')
+        delta_t = 1
+
     reference_box = f0['box']
     particle_types = f0['types']
 
@@ -190,7 +198,10 @@ if __name__ == '__main__':
     if verbose:
         print('  Simulation box=\n%s' % str(reference_box))
 
-    rec = reciprocal(reference_box, N_max=options.Nk, k_max=options.k_max,
+    rec = reciprocal(reference_box, 
+                     N_max=options.Nk, 
+                     k_max=options.k_max,
+                     ftype='s',
                      debug=verbose)
                      
     if verbose:
@@ -202,12 +213,13 @@ if __name__ == '__main__':
     assert options.stride > 0
     N_stride = options.stride
 
-    itraj = get_itraj(options.f, index_file=options.n, 
-                            step=options.step, max_frames=options.max_frames)
-
-    itraj_window = iwindow(itraj, width=N_tc, stride=options.stride,
+    itraj_window = iwindow(get_itraj(options.f, 
+                                     index_file=options.n, 
+                                     step=options.step, 
+                                     max_frames=options.max_frames),
+                           width=N_tc, 
+                           stride=options.stride,
                            map_fun=rec.process_frame)
-
 
     # TODO....
     # * Assert box is not changed during consecutive frames
@@ -216,7 +228,7 @@ if __name__ == '__main__':
     m = count(0)
     Ntypes = len(particle_types)
     mij_list = [(m.next(),i,j) 
-                for i in range(Ntypes) for j in range(i,Ntypes)]
+                for i in xrange(Ntypes) for j in xrange(i,Ntypes)]
     pair_types = [particle_types[i]+'-'+particle_types[j] for _, i, j in mij_list]
 
     z = np.zeros(len(rec.qdist))
