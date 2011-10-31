@@ -93,16 +93,18 @@ TRAJECTORY_PLUGIN_MAPPING = (
 def find_molfile_plugin_dir():
     # somewhat lengthyish way of finding the plugins
     from platform import uname
+
+    vmddir = None
     system,_,_,_,machine,_ = uname()
     rel_path = 'plugins/%s/molfile' % \
         {('Linux', 'x86_64') : 'LINUXAMD64',
          ('Linux', 'i386') : 'LINUX',
-         ('Darwin', 'x86_64') : 'MACOSXX86',
+         #('Darwin', 'x86_64') : 'MACOSXX86',
          ('Darwin', 'i386') : 'MACOSXX86'}.get((system, machine),
                                                'UNKNOWN')
 
     if 'VMDDIR' in os.environ:
-        return os.path.join(os.environ['VMDDIR'], rel_path)
+        vmddir = os.environ['VMDDIR']
     else:
         import re
         for d in os.environ['PATH'].split(os.pathsep):
@@ -113,8 +115,13 @@ def find_molfile_plugin_dir():
                         m = re.match(r'^defaultvmddir=(?:"(/.*)"|(/[^# ]*)).*$', L) 
                         if m:
                             a,b = m.groups()
-                            return os.path.join(a or b, rel_path)
+                            vmddir = a or b
+    if vmddir:
+        x = os.path.join(vmddir, rel_path)
+        if os.path.exists(x):
+            return x
     return None
+
 
 MOLFILE_PLUGIN_DIR = find_molfile_plugin_dir()
 MIN_ABI_VERSION = 15

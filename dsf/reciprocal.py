@@ -69,7 +69,7 @@ def calc_rho_j_k(x, v, k, ftype='d'):
     _, Nk = k.shape
     rho_k = np.zeros((Nk,), dtype=np_c[ftype], order='F')
     j_k = np.zeros((3,Nk), dtype=np_c[ftype], order='F')
-    _lib[tfype].rho_j_k(x, v, Nx, k, Nk, rho_k, j_k)
+    _lib[ftype].rho_j_k(x, v, Nx, k, Nk, rho_k, j_k)
     return rho_k, j_k
 
 
