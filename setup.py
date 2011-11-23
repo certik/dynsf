@@ -17,7 +17,7 @@ rho_j_k_s_ext = Extension('dsf._rho_j_k_s',
 
 
 setup(name = 'python-dynsf',
-      version = '0.1.1',
+      version = '0.1.1+',
       description = 'Tool for calculating the dynamical structure factor',
       author = 'Mattias Slabanja',
       author_email = 'slabanja@chalmers.se',
