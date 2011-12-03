@@ -27,7 +27,12 @@ Not much more than the necessary ctypes stuff.
 """
 
 import os
-from sysconfig import get_config_var
+try:
+    from sysconfig import get_config_var
+except ImportError:
+    # Fallback for python before version 2.7
+    from distutils.sysconfig import get_config_var
+
 from itertools import islice
 
 from ctypes import cdll, CDLL, RTLD_GLOBAL, \
