@@ -22,6 +22,11 @@ import numpy as np
 
 def create_mfile(filename, output):
     with open(filename, 'w') as f:
-        for v, n, desc in output:
-            f.write("\n%% %s\n%s = \\\n%s\n" % (desc, n, str(v)))
+        popts = np.get_printoptions()
+        np.set_printoptions(threshold='inf',
+                            linewidth='inf')
 
+        for v, n, desc in output:
+            f.write("\n%% %s\n%s = \\\n%s;\n" % (desc, n, str(v)))
+        
+        np.set_printoptions(**popts)
