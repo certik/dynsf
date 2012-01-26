@@ -1,16 +1,16 @@
 
 # Copyright (C) 2011 Mattias Slabanja <slabanja@chalmers.se>
-#               
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
@@ -38,16 +38,16 @@ ndp_c_1d_rw = {}
 ndp_c_2d_rw = {}
 for t in "ds":
     ndp_f_2d_r[t] = np_ndp(dtype=np_f[t], ndim=2, flags='f_contiguous, aligned')
-    ndp_c_1d_rw[t] = np_ndp(dtype=np_c[t], ndim=1, 
+    ndp_c_1d_rw[t] = np_ndp(dtype=np_c[t], ndim=1,
                             flags='f_contiguous, aligned, writeable')
-    ndp_c_2d_rw[t] = np_ndp(dtype=np_c[t], ndim=2, 
+    ndp_c_2d_rw[t] = np_ndp(dtype=np_c[t], ndim=2,
                             flags='f_contiguous, aligned, writeable')
 
     _lib[t] = cdll.LoadLibrary(join(dirname(__file__),'_rho_j_k_%s.so' % t))
-    _lib[t].rho_k.argtypes = (ndp_f_2d_r[t], c_int, 
-                              ndp_f_2d_r[t], c_int, 
+    _lib[t].rho_k.argtypes = (ndp_f_2d_r[t], c_int,
+                              ndp_f_2d_r[t], c_int,
                               ndp_c_1d_rw[t])
-    _lib[t].rho_j_k.argtypes = (ndp_f_2d_r[t], ndp_f_2d_r[t], c_int, 
+    _lib[t].rho_j_k.argtypes = (ndp_f_2d_r[t], ndp_f_2d_r[t], c_int,
                                 ndp_f_2d_r[t], c_int,
                                 ndp_c_1d_rw[t], ndp_c_2d_rw[t])
 
@@ -77,15 +77,15 @@ def calc_rho_j_k(x, v, k, ftype='d'):
 
 class reciprocal:
     def __init__(self, box, N_max=-1, k_max=10.0, debug=False, ftype='d'):
-        """Creates a set of reciprocal coordinates, and calculate rho_k/j_k 
+        """Creates a set of reciprocal coordinates, and calculate rho_k/j_k
         for a trajectory frame.
 
-        
+
         Optionally limit the set to approximately N_max points by
         randomly removing points. The points are removed in such a way
-        that for k>k_prune, the points will be radially uniformely 
+        that for k>k_prune, the points will be radially uniformely
         distributed (the value of k_prune is calculated from k_max, N_max,
-        and the shape of the box). 
+        and the shape of the box).
 
         k_max should be the "physicist reciprocal length" (with 2*pi factor)
 
@@ -156,14 +156,14 @@ class reciprocal:
 
         Calculate the density in k-space for dynsf-style trajectory frame.
         """
-        if self.debug: 
+        if self.debug:
             sys.stdout.write("processing frame %i\r" % frame['step'])
             sys.stdout.flush()
 
         frame = frame.copy()
         if 'vs' in frame:
             rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.kvals,
-                                              ftype=self.ftype) 
+                                              ftype=self.ftype)
                                  for x,v in zip(frame['xs'],frame['vs'])])
             jz_ks = [np.sum(j*self.kdirect, axis=0) for j in j_ks]
             frame['j_ks'] = j_ks
@@ -171,8 +171,8 @@ class reciprocal:
             frame['jpar_ks'] = [j-(jz*self.kdirect) for j,jz in zip(j_ks, jz_ks)]
             frame['rho_ks'] = rho_ks
         else:
-            frame['rho_ks'] = [calc_rho_k(x, self.kvals, 
-                                          ftype=self.ftype) 
+            frame['rho_ks'] = [calc_rho_k(x, self.kvals,
+                                          ftype=self.ftype)
                                for x in frame['xs']]
         return frame
 

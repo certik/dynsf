@@ -1,16 +1,16 @@
 
 # Copyright (C) 2011 Mattias Slabanja <slabanja@chalmers.se>
-#               
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
@@ -59,14 +59,14 @@ def get_itraj(filename, step=1, max_frames=0, index_file=None,
     max_frames: (0 by default = no limit), must be >= 0.
     index_file, optional: Is used to explicitly split the
         particles/atoms in the trajectory into different
-        categories. 
+        categories.
     plugin, options: Explicitly specify molfile-plugin to use.
         Only used if the molfile_reader-plugins are found.
         If None, choose plugin based on filename suffix.
 
     Each iterator step consists of a dictionary containing keys:
     'N' : Total number of particles
-    'xs' : List of coordinate arrays, one array for each 
+    'xs' : List of coordinate arrays, one array for each
            particle/atom category.
     'box' :
     'time' :
@@ -76,14 +76,14 @@ def get_itraj(filename, step=1, max_frames=0, index_file=None,
     'vs' : List of coordinate velocites, one array for each
            particle/atom category.
 
-    
+
     """
-    
+
     if MOLFILE_PLUGIN_DIR:
         # Apparently we have a bunch of molfileplugins, just pass
         # it the filename and hope it works...
         # It seems molfile_reader defaults to Angstrom
-        reader = curry(molfile_reader, 
+        reader = curry(molfile_reader,
                        plugin=plugin, x_factor=0.1, t_factor=1.0)
     elif filename.endswith('.xtc') and libgmx:
         # libgmx is possibly faster than molfile_reader, but of course
@@ -94,7 +94,7 @@ def get_itraj(filename, step=1, max_frames=0, index_file=None,
         reader = curry(TRJ_reader, x_factor=0.1, t_factor=1.0)
     else:
         raise RuntimeError('Unknown file format or no plugins found')
-        
+
     if not isfile(filename):
         raise RuntimeError('File "%s" does not exist'%filename)
 
@@ -102,12 +102,12 @@ def get_itraj(filename, step=1, max_frames=0, index_file=None,
 
     assert step > 0
     assert max_frames >= 0
-    if max_frames == 0: 
+    if max_frames == 0:
         max_frames = sys.maxint
     elif step > 1:
         max_frames = max_frames*step
     i = islice(i, 0, max_frames, step)
-    
+
     return i
 
 
@@ -126,8 +126,8 @@ class iwindow:
     Returns consecutive windows (a windows is represented as a list
     of objects), created from an input iterator.
 
-    Variable width (length of window, default 2), 
-    and stride (distance between the start of two consecutive 
+    Variable width (length of window, default 2),
+    and stride (distance between the start of two consecutive
     window frames, default 1).
     Optional map_item to process each non-discarded object.
     Useful if stride > width and map_item is expensive (as compared to
@@ -136,21 +136,21 @@ class iwindow:
     """
     def __init__(self, itraj, width=2, stride=1, map_fun=None):
         self._raw_it = itraj
-        if map_fun: 
+        if map_fun:
             self._it = imap(map_fun, self._raw_it)
-        else: 
+        else:
             self._it = self._raw_it
         assert(stride >= 1)
         assert(width >= 1)
         self.width = width
         self.stride = stride
         self._window = None
-        
+
     def __iter__(self):
         return self
 
     def next(self):
-        if self._window is None:            
+        if self._window is None:
             self._window = deque(islice(self._it, self.width), self.width)
         else:
             if self.stride >= self.width:
@@ -172,7 +172,7 @@ class iwindow:
 lname = find_library('gmx')
 libgmx = lname and cdll.LoadLibrary(lname)
 np_ndp = np.ctypeslib.ndpointer
-if libgmx: 
+if libgmx:
     # single prec gmx-real equals float, right?
     xtcfloat_np = np.float32
     xtcfloat_ct = c_float
@@ -189,13 +189,13 @@ if libgmx:
     # /* Open xtc file, read xtc file first time, allocate memory for x */
     libgmx.read_first_xtc.restype = xtcint_ct
     libgmx.read_first_xtc.argtypes = [
-        POINTER(xtcint_ct), POINTER(xtcint_ct), 
-        POINTER(xtcint_ct), POINTER(xtcfloat_ct), 
-        np_ndp(dtype=xtcfloat_np, shape=(3,3), 
+        POINTER(xtcint_ct), POINTER(xtcint_ct),
+        POINTER(xtcint_ct), POINTER(xtcfloat_ct),
+        np_ndp(dtype=xtcfloat_np, shape=(3,3),
                                flags='f_contiguous, aligned'),
         POINTER(POINTER(xtcfloat_ct)),
         POINTER(xtcfloat_ct), POINTER(xtcint_ct)]
-    
+
     # int read_next_xtc(t_fileio *fio,
     #                          int natoms,int *step,real *time,
     #                          matrix box,rvec *x,real *prec,gmx_bool *bOK);
@@ -203,13 +203,13 @@ if libgmx:
     libgmx.read_next_xtc.restype = xtcint_ct
     libgmx.read_next_xtc.argtypes = [
         POINTER(xtcint_ct), xtcint_ct,
-        POINTER(xtcint_ct), POINTER(xtcfloat_ct), 
-        np_ndp(dtype=xtcfloat_np, shape=(3,3), 
+        POINTER(xtcint_ct), POINTER(xtcfloat_ct),
+        np_ndp(dtype=xtcfloat_np, shape=(3,3),
                                flags='f_contiguous, aligned'),
-        np_ndp(dtype=xtcfloat_np, ndim=2, 
+        np_ndp(dtype=xtcfloat_np, ndim=2,
                                flags='f_contiguous, aligned'),
         POINTER(xtcfloat_ct), POINTER(xtcint_ct)]
-    
+
 
 class XTC_reader:
     """Iterable object
@@ -226,7 +226,7 @@ class XTC_reader:
     def __init__(self, filename, index_file=None):
         if libgmx is None:
             raise RuntimeError("No libgmx found, can't read xtc-file")
-        
+
         self._fio = libgmx.open_xtc(filename, 'rb')
         if not self._fio:
             raise IOError("Failed to open file %s (for some reason)" % filename)
@@ -244,7 +244,7 @@ class XTC_reader:
 
         self.index_file = index_file
 
-        
+
     def _setup_indexes(self):
         # This requires the knowledge of the number of atoms, N.
         # Hence, it cannot be called until after the first frame is read.
@@ -264,8 +264,8 @@ class XTC_reader:
     def _get_first(self):
         # Read first frame, update state of self, create indexes etc
         _xfirst = POINTER(xtcfloat_ct)()
-        res = libgmx.read_first_xtc(self._fio, self._natoms, 
-                                    self._step, self._time, 
+        res = libgmx.read_first_xtc(self._fio, self._natoms,
+                                    self._step, self._time,
                                     self._box, _xfirst,
                                     self._prec, self._bOK)
         self._first_called = True
@@ -277,12 +277,12 @@ class XTC_reader:
         N = self._natoms.value
         self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N), order='F'),
                              xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
-        
+
         self._setup_indexes()
-    
+
     def _get_next(self):
         # get next frame, update state of self
-        res = libgmx.read_next_xtc(self._fio, self._natoms.value, 
+        res = libgmx.read_next_xtc(self._fio, self._natoms.value,
                                    self._step, self._time,
                                    self._box, self._x,
                                    self._prec, self._bOK)
@@ -291,15 +291,15 @@ class XTC_reader:
         if not self._bOK.value:
             raise IOError("corrupt frame in xtc-file?")
         return True
-        
+
     def __iter__(self):
         return self
-    
+
     def close(self):
         if self._open:
             libgmx.close_xtc(self._fio)
             self._open = False
-        
+
     def next(self):
         if not self._open:
             raise StopIteration
@@ -309,7 +309,7 @@ class XTC_reader:
             if not self._get_next():
                 self.close()
                 raise StopIteration
-            
+
         xs = [self._x[:,I] for I in self.indexes]
         return {'N' : self._natoms.value,
                 'types' : tuple(self.types),
@@ -322,12 +322,12 @@ class XTC_reader:
 
 
 class TRJ_reader:
-    """Read LAMMPS trajectory file 
+    """Read LAMMPS trajectory file
 
-    This is a naive (and comparatively slow) implementation, 
+    This is a naive (and comparatively slow) implementation,
     written entirely in python.
     """
-    def __init__(self, filename, index_file=None, 
+    def __init__(self, filename, index_file=None,
                  x_factor=1.0, t_factor=1.0):
         if filename.endswith('.gz'):
             from gzip import GzipFile as CFile
@@ -344,7 +344,7 @@ class TRJ_reader:
         self.t_factor = t_factor
         self.v_factor = x_factor/t_factor
         self._first_called = False
-                
+
 
     def _setup_indexes(self):
         # This requires the knowledge of the number of atoms, N.
@@ -370,10 +370,10 @@ class TRJ_reader:
     # 1.54223 26.5378
     # 1.54223 26.5378
     # 1.54223 26.5378
-    # ITEM: ATOMS id type x y z vx vy vz 
-    # 247 1 3.69544 2.56202 3.27701 0.00433856 -0.00099307 -0.00486166 
-    # 249 2 3.73324 3.05962 4.14359 0.00346029 0.00332502 -0.00731005 
-    # 463 1 3.5465 4.12841 5.34888 0.000523332 0.00145597 -0.00418675 
+    # ITEM: ATOMS id type x y z vx vy vz
+    # 247 1 3.69544 2.56202 3.27701 0.00433856 -0.00099307 -0.00486166
+    # 249 2 3.73324 3.05962 4.14359 0.00346029 0.00332502 -0.00731005
+    # 463 1 3.5465 4.12841 5.34888 0.000523332 0.00145597 -0.00418675
 
     def _read_frame_header(self):
         while True:
@@ -406,13 +406,13 @@ class TRJ_reader:
                 cols = tuple(m.group(2).split())
                 # At this point, there should be only atomic data left
                 return (step, natoms, box, cols)
-            
+
     def _get_first(self):
         # Read first frame, update state of self, create indexes etc
         step, N, box, cols = self._read_frame_header()
         self._natoms = N
         self._step = step
-        self._cols = cols        
+        self._cols = cols
         self._box = box
 
         def _all_in_cols(keys):
@@ -431,7 +431,7 @@ class TRJ_reader:
         self._id_I = cols.index('id')
 
         if _all_in_cols(('vx','vy','vz')):
-            self._v_I = np.array(map(cols.index, ('vx','vy','vz')))            
+            self._v_I = np.array(map(cols.index, ('vx','vy','vz')))
         else:
             self._v_I = None
 
@@ -440,7 +440,7 @@ class TRJ_reader:
         else:
             self._type_I = None
 
-        data = np.array([map(float, self._fh.readline().split()) 
+        data = np.array([map(float, self._fh.readline().split())
                          for _ in range(N)])
         I = np.asarray(data[:,self._id_I], dtype=np.int)
         # Unless dump is done for group "all" ...
@@ -453,7 +453,7 @@ class TRJ_reader:
 
         self._setup_indexes()
 
-    
+
     def _get_next(self):
         # get next frame, update state of self
         step, N, box, cols = self._read_frame_header()
@@ -461,17 +461,17 @@ class TRJ_reader:
         assert(self._cols == cols)
         self._step = step
         self._box = box
-        
-        data = np.array([map(float, self._fh.readline().split()) 
+
+        data = np.array([map(float, self._fh.readline().split())
                          for _ in range(N)])
         I = np.asarray(data[:,self._id_I], dtype=np.int)-1
         self._x[:,I] = data[:,self._x_I].transpose()
         if not self._v_I is None:
             self._v[:,I] = data[:,self._v_I].transpose()
-            
+
     def __iter__(self):
         return self
-    
+
     def close(self):
         pass
 
@@ -483,7 +483,7 @@ class TRJ_reader:
             self._get_next()
         else:
             self._get_first()
-            
+
         xs = [self.x_factor*self._x[:,I] for I in self.indexes]
         res = {'N' : int(self._natoms),
                'types' : tuple(self.types),
@@ -534,7 +534,7 @@ class molfile_reader:
         self._mfp = MolfilePlugin(plugin)
         p = self._mfp.plugin
 
-        self._fh = p.open_file_read(filename, suffix, 
+        self._fh = p.open_file_read(filename, suffix,
                                     byref(self._N))
         if not self._fh:
             raise RuntimeError('Failed to open file %s with plugin %s.' % \
@@ -542,8 +542,8 @@ class molfile_reader:
         N = self._N.value
 
         if p.read_structure:
-            # for e.g. lammpsplugin, read_structure needs to be called first so 
-            # that molfile_reader knows (internally) which coordinates and 
+            # for e.g. lammpsplugin, read_structure needs to be called first so
+            # that molfile_reader knows (internally) which coordinates and
             # velocites to map to which atoms.
             self._atoms_arr = (molfile_atom_t*N)()
             self._optflags = c_int()
@@ -555,7 +555,7 @@ class molfile_reader:
             self._atoms_arr = None
 
         self._v = None
-        self._x = np.require(np.zeros((3,N)), molfile_float_np, 
+        self._x = np.require(np.zeros((3,N)), molfile_float_np,
                              ['F_CONTIGUOUS', 'ALIGNED'])
 
         if p.read_timestep_metadata:
@@ -568,7 +568,7 @@ class molfile_reader:
                               'file %s (plugin %s, rc %i)' % (filename, plugin, rc))
 
             if tsm.has_velocities:
-                self._v = np.require(np.zeros((3,N)), molfile_float_np, 
+                self._v = np.require(np.zeros((3,N)), molfile_float_np,
                                      ['F_CONTIGUOUS', 'ALIGNED'])
         else:
             self._timestep_metadata = None
@@ -600,7 +600,7 @@ class molfile_reader:
 
     def __iter__(self):
         return self
-    
+
     def next(self):
         assert self._mfp.plugin.read_next_timestep
 
@@ -630,15 +630,15 @@ def to_box(A, B, C, a, b, g):
     return np.array(((A,              0.0,           0.0),
                      (B*np.cos(f*g),  B,             0.0),
                      (C*np.cos(f*b),  C*np.cos(f*a), C)))
-                    
+
 
 
 
 def read_ndx_file(filename):
     """Read an ini-style gromacs index file
-    
+
     Reads and parses named index file, returns a list
-    of name-arrays-tuples, containing 
+    of name-arrays-tuples, containing
     name and indexes of the specified sections.
     """
     section_re = re.compile(r'^ *\[ *([a-zA-Z0-9_.-]+) *\] *$')

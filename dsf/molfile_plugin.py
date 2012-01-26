@@ -1,24 +1,24 @@
 #!/usr/bin/env python
 
 # Copyright (C) 2011 Mattias Slabanja <slabanja@chalmers.se>
-#               
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful, but
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
 __all__ = ['MolfilePlugin', 'TRAJECTORY_PLUGIN_MAPPING',
-           'molfile_timestep_t', 'molfile_timestep_metadata_t', 
+           'molfile_timestep_t', 'molfile_timestep_metadata_t',
            'molfile_atom_t', 'molfile_plugin_t']
 
 __doc__ = """Molfile plugin interface
@@ -53,7 +53,7 @@ c_float_p = PTR(c_float)
 c_float_pp = PTR(c_float_p)
 
 #
-# As of molfile_plugin abiversion 16, the following trajectory 
+# As of molfile_plugin abiversion 16, the following trajectory
 # formats are supported (pasted from the AMD web page):
 #
 # Molecular Dynamics Trajectory File Plugins
@@ -70,13 +70,13 @@ c_float_pp = PTR(c_float_p)
 #     VASP trajectories of ionic steps (.xml, .OUTCAR, .XCATCAR)
 #     VTF trajectory files (.vtf)
 #     XCrySDen, Quantum Espresso XSF/AXSF trajectory files (.axsf, .xsf)
-#     XYZ trajectory files (.xyz) 
+#     XYZ trajectory files (.xyz)
 #
 
 TRAJECTORY_PLUGIN_MAPPING = (
     #(SOFTWARE-NAME, FILE-TYPE, FILE-SUFFIX, PLUGIN-NAME)
     ('AMBER',   '"binpos"',       'binpos',   'binposplugin'),
-    ('AMBER',   '"CRD"',          'crd',      'crdplugin'), 
+    ('AMBER',   '"CRD"',          'crd',      'crdplugin'),
     ('AMBER',   'NetCDF',         'nc',       'netcdfplugin'),
     ('CHARMM',  '"DCD" - CHARMM, NAMD, XPLOR',
                                   'dcd',      'dcdplugin'),
@@ -117,7 +117,7 @@ def find_molfile_plugin_dir():
             if os.path.exists(f):
                 with open(f, 'r') as fh:
                     for L in islice(fh, 10):
-                        m = re.match(r'^defaultvmddir=(?:"(/.*)"|(/[^# ]*)).*$', L) 
+                        m = re.match(r'^defaultvmddir=(?:"(/.*)"|(/[^# ]*)).*$', L)
                         if m:
                             a,b = m.groups()
                             vmddir = a or b
@@ -222,7 +222,7 @@ class molfile_plugin_t(Structure):
 #
 # void *(* open_file_read)(const char *filepath, const char *filetype, int *natoms);
                 ('open_file_read', CFT(c_void_p, c_char_p, c_char_p, c_int_p)),
-#                
+#
 # int (*read_structure)(void *, int *optflags, molfile_atom_t *atoms);
                 ('read_structure', CFT(c_int, c_void_p, c_int_p,
                                        PTR(molfile_atom_t))),
@@ -253,24 +253,24 @@ class molfile_plugin_t(Structure):
 #
 #  int (* read_volumetric_metadata)(void *, int *nsets,
 #        molfile_volumetric_t **metadata);
-                ('read_volumetric_metadata', CFT(c_int, c_void_p, c_int_p, 
+                ('read_volumetric_metadata', CFT(c_int, c_void_p, c_int_p,
                                                  PTR(PTR(molfile_volumetric_t)))),
 #
 #  int (* read_volumetric_data)(void *, int set, float *datablock,
 #        float *colorblock);
-                ('read_volumetric_data', CFT(c_int, c_void_p, c_int, c_float_p, 
+                ('read_volumetric_data', CFT(c_int, c_void_p, c_int, c_float_p,
                                              c_float_p)),
 #
 #  int (* read_rawgraphics)(void *, int *nelem, const molfile_graphics_t **data);
                 ('read_rawgraphics', dummy_fun_t),
 #
 #  int (* read_molecule_metadata)(void *, molfile_metadata_t **metadata);
-                ('read_molecule_metadata', CFT(c_int, c_void_p, 
+                ('read_molecule_metadata', CFT(c_int, c_void_p,
                                                PTR(PTR(molfile_metadata_t)))),
 #
 #  int (* write_bonds)(void *, int nbonds, int *from, int *to, float *bondorder,
 #                     int *bondtype, int nbondtypes, char **bondtypename);
-                ('write_bonds', dummy_fun_t),                
+                ('write_bonds', dummy_fun_t),
 #
 #  int (* write_volumetric_data)(void *, molfile_volumetric_t *metadata,
 #                                float *datablock, float *colorblock);
@@ -331,7 +331,7 @@ class MolfilePlugin:
     plugin, without any library suffix (i.e., without any '.so').
     Optionally, an explicit path for the plugin files can be
     provided (by default, MOLFILE_PLUGIN_DIR is used).
-    The mapping provided through the tuples in 
+    The mapping provided through the tuples in
     TRAJECTORY_PLUGIN_MAPPING can be useful to figure out which
     pluginname to use (but that is not taken care of in here).
 
@@ -345,13 +345,13 @@ class MolfilePlugin:
                                "Do you have vmd in your PATH, or is VMDDIR "\
                                "correctly set?")
 
-        lib = cdll.LoadLibrary(os.path.join(plugin_dir, 
+        lib = cdll.LoadLibrary(os.path.join(plugin_dir,
                                             plugin_name+get_config_var('SO')))
-    
+
         # extern int vmdplugin_init(void);
         # extern int vmdplugin_fini(void);
         # extern int vmdplugin_register(void *, vmdplugin_register_cb);
-        
+
         lib.vmdplugin_init.restype = c_int
         lib.vmdplugin_fini.restype = c_int
         lib.vmdplugin_register.restype = c_int
@@ -380,7 +380,7 @@ class MolfilePlugin:
         self._lib.vmdplugin_fini()
 
 
-  
+
 if __name__ == '__main__':
     for _,_,ext,pn in TRAJECTORY_PLUGIN_MAPPING:
         p = MolfilePlugin(pn)
