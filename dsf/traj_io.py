@@ -19,6 +19,7 @@
 __all__ = ['get_itraj', 'iwindow', 'read_ndx_file',
            'XTC_reader', 'TRJ_reader', 'molfile_reader']
 
+from numpy import pi, sin, cos, arange, array, zeros
 import numpy as np
 import re
 import sys
@@ -234,7 +235,7 @@ class XTC_reader:
         self._natoms = xtcint_ct()
         self._step =   xtcint_ct()
         self._time =   xtcfloat_ct()
-        self._box =    np.require(np.zeros((3,3)),
+        self._box =    np.require(zeros((3,3)),
                                   xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
         self._x =      None
         self._prec =   xtcfloat_ct()
@@ -259,7 +260,7 @@ class XTC_reader:
                 self.indexes.append(I)
         else:
             self.types = ['all']
-            self.indexes = [np.arange(N)]
+            self.indexes = [arange(N)]
 
     def _get_first(self):
         # Read first frame, update state of self, create indexes etc
@@ -275,7 +276,7 @@ class XTC_reader:
             raise IOError("corrupt frame in xtc-file?")
 
         N = self._natoms.value
-        self._x = np.require(np.array(_xfirst[0:3*N]).reshape((3,N), order='F'),
+        self._x = np.require(array(_xfirst[0:3*N]).reshape((3,N), order='F'),
                              xtcfloat_np, ['F_CONTIGUOUS', 'ALIGNED'])
 
         self._setup_indexes()
@@ -311,13 +312,13 @@ class XTC_reader:
                 raise StopIteration
 
         xs = [self._x[:,I] for I in self.indexes]
-        return {'N' : self._natoms.value,
-                'types' : tuple(self.types),
-                'box' : self._box.copy('F'),
-                'step' : self._step.value,
-                'time' : self._time.value,
-                'xs' : xs,
-                }
+        return dict(N = self._natoms.value,
+                    types = tuple(self.types),
+                    box = self._box.copy('F'),
+                    step = self._step.value,
+                    time = self._time.value,
+                    xs = xs,
+                    )
 
 
 
@@ -360,7 +361,7 @@ class TRJ_reader:
                 self.indexes.append(I)
         else:
             self.types = ['all']
-            self.indexes = [np.arange(N)]
+            self.indexes = [arange(N)]
 
     # ITEM: TIMESTEP
     # 81000
@@ -394,7 +395,7 @@ class TRJ_reader:
             elif m.group(1) == "BOX BOUNDS":
                 bbounds = [map(float, self._fh.readline().split())
                            for _ in range(3)]
-                x = np.array(bbounds)
+                x = array(bbounds)
                 box = np.diag(x[:,1]-x[:,0])
                 if x.shape == (3,3):
                     box[1,0] = x[0,2]
@@ -422,16 +423,16 @@ class TRJ_reader:
             return True
 
         if _all_in_cols(('id','xu','yu','zu')):
-            self._x_I = np.array(map(cols.index, ('xu','yu','zu')))
+            self._x_I = array(map(cols.index, ('xu','yu','zu')))
         elif _all_in_cols(('id','x','y','z')):
-            self._x_I = np.array(map(cols.index, ('x','y','z')))
+            self._x_I = array(map(cols.index, ('x','y','z')))
         else:
             raise RuntimeError('TRJ file must contain at least atom-id, x, y, '
                                'and z coordinates to be useful.')
         self._id_I = cols.index('id')
 
         if _all_in_cols(('vx','vy','vz')):
-            self._v_I = np.array(map(cols.index, ('vx','vy','vz')))
+            self._v_I = array(map(cols.index, ('vx','vy','vz')))
         else:
             self._v_I = None
 
@@ -440,15 +441,15 @@ class TRJ_reader:
         else:
             self._type_I = None
 
-        data = np.array([map(float, self._fh.readline().split())
+        data = array([map(float, self._fh.readline().split())
                          for _ in range(N)])
         I = np.asarray(data[:,self._id_I], dtype=np.int)
         # Unless dump is done for group "all" ...
-        I[np.argsort(I)] = np.arange(len(I))
-        self._x = np.zeros((3,N), order='F')
+        I[np.argsort(I)] = arange(len(I))
+        self._x = zeros((3,N), order='F')
         self._x[:,I] = data[:,self._x_I].transpose()
         if not self._v_I is None:
-            self._v = np.zeros((3,N), order='F')
+            self._v = zeros((3,N), order='F')
             self._v[:,I] = data[:,self._v_I].transpose()
 
         self._setup_indexes()
@@ -462,7 +463,7 @@ class TRJ_reader:
         self._step = step
         self._box = box
 
-        data = np.array([map(float, self._fh.readline().split())
+        data = array([map(float, self._fh.readline().split())
                          for _ in range(N)])
         I = np.asarray(data[:,self._id_I], dtype=np.int)-1
         self._x[:,I] = data[:,self._x_I].transpose()
@@ -485,13 +486,14 @@ class TRJ_reader:
             self._get_first()
 
         xs = [self.x_factor*self._x[:,I] for I in self.indexes]
-        res = {'N' : int(self._natoms),
-               'types' : tuple(self.types),
-               'box' : self.x_factor*self._box.copy('F'),
-               'step' : int(self._step),
-               'time' : self.t_factor*self._step,
-               'xs' : xs }
-        if not self._v_I is None:
+        res = dict(N = int(self._natoms),
+                   types = tuple(self.types),
+                   box = self.x_factor*self._box.copy('F'),
+                   time = self.t_factor*self._step,
+                   step = int(self._step),
+                   xs = xs,
+                   )
+        if self._v_I is not None:
             res['vs'] = [self.v_factor*self._v[:,I] for I in self.indexes]
 
         return res
@@ -555,7 +557,7 @@ class molfile_reader:
             self._atoms_arr = None
 
         self._v = None
-        self._x = np.require(np.zeros((3,N)), molfile_float_np,
+        self._x = np.require(zeros((3,N)), molfile_float_np,
                              ['F_CONTIGUOUS', 'ALIGNED'])
 
         if p.read_timestep_metadata:
@@ -568,7 +570,7 @@ class molfile_reader:
                               'file %s (plugin %s, rc %i)' % (filename, plugin, rc))
 
             if tsm.has_velocities:
-                self._v = np.require(np.zeros((3,N)), molfile_float_np,
+                self._v = np.require(zeros((3,N)), molfile_float_np,
                                      ['F_CONTIGUOUS', 'ALIGNED'])
         else:
             self._timestep_metadata = None
@@ -596,7 +598,7 @@ class molfile_reader:
                 self.indexes.append(I)
         else:
             self.types = ['all']
-            self.indexes = [np.arange(N)]
+            self.indexes = [arange(N)]
 
     def __iter__(self):
         return self
@@ -611,13 +613,14 @@ class molfile_reader:
             self._mfp.close()
             raise StopIteration
 
-        res = {'N' : N,
-               'types' : tuple(self.types),
-               'box' : to_box(ts.A, ts.B, ts.C,
-                              ts.alpha, ts.beta, ts.gamma)*self.x_factor,
-               'step' : self._fcnt.next(),
-               'time' : ts.physical_time*self.t_factor,
-               'xs' : [self._x[:,I]*self.x_factor for I in self.indexes]}
+        res = dict(N = N,
+                   types = tuple(self.types),
+                   box = to_box(ts.A, ts.B, ts.C,
+                                ts.alpha, ts.beta, ts.gamma)*self.x_factor,
+                   time = ts.physical_time*self.t_factor,
+                   step = self._fcnt.next(),
+                   xs = [self._x[:,I]*self.x_factor for I in self.indexes]
+                   )
         if not self._v is None:
             res['vs'] = [self._v[:,I]*self.v_factor for I in self.indexes]
 
@@ -626,10 +629,10 @@ class molfile_reader:
 
 def to_box(A, B, C, a, b, g):
     # Helper function that creates box vectors out of molfile-info
-    f = np.pi/180.0
-    return np.array(((A,              0.0,           0.0),
-                     (B*np.cos(f*g),  B,             0.0),
-                     (C*np.cos(f*b),  C*np.cos(f*a), C)))
+    f = pi/180.0
+    return array(((A,           0.0,        0.0),
+                  (B*cos(f*g),  B,          0.0),
+                  (C*cos(f*b),  C*cos(f*a), C)))
 
 
 
@@ -650,12 +653,11 @@ def read_ndx_file(filename):
             m = section_re.match(L)
             if m:
                 if members and name:
-                    sections.append((name, np.unique(np.array(members))-1))
+                    sections.append((name, np.unique(array(members))-1))
                 name = m.group(1)
                 members = []
             elif not L.isspace():
                 members += map(int, L.split())
         if members and name:
-            sections.append((name, np.unique(np.array(members))-1))
+            sections.append((name, np.unique(array(members))-1))
     return sections
-
