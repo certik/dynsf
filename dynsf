@@ -158,8 +158,6 @@ if __name__ == '__main__':
 
     logger.addHandler(handler)
     
-    verbose = quietness < 0
-
     if options.f is None:
         logger.error('A trajectory must be specified. Use option -f.\n')
         parser.print_help()
@@ -217,8 +215,7 @@ if __name__ == '__main__':
     rec = reciprocal(reference_box,
                      N_max=options.Nk,
                      k_max=options.k_max,
-                     ftype='s',
-                     debug=verbose)
+                     ftype='s')
 
     logger.info('Nk points = %i' % len(rec.k_distance))
     logger.info('k_max = %f --> x_min = %f [nm]' % \

@@ -22,6 +22,7 @@ __all__ = ['reciprocal']
 import sys
 from os.path import dirname, join
 import numpy as np
+import logging
 from numpy import linalg, array, arange, require, nonzero, pi, sqrt, prod
 from ctypes import cdll, byref, c_int, c_float, POINTER
 
@@ -74,10 +75,10 @@ def calc_rho_j_k(x, v, k, ftype='d'):
     return rho_k, j_k
 
 
-
+logger = logging.getLogger('dynsf')
 
 class reciprocal:
-    def __init__(self, box, N_max=-1, k_max=10.0, debug=False, ftype='d'):
+    def __init__(self, box, N_max=-1, k_max=10.0, ftype='d'):
         """Creates a set of reciprocal coordinates, and calculate rho_k/j_k
         for a trajectory frame.
 
@@ -105,8 +106,6 @@ class reciprocal:
         self.A = require(box.copy(), npftype)
         # B is the "crystallographic" reciprocal vectors
         self.B = linalg.inv(self.A.transpose())
-
-        self.debug = debug
 
         q_max = k_max/(2.0*pi)
         q_mins = array([linalg.norm(b) for b in self.B])
@@ -147,7 +146,7 @@ class reciprocal:
 
             # Keep point with probability min(1, (q_prune/|q|)^2) ->
             # aim for an equal number of points per equally thick "onion peel"
-            # to even the statistict per radial unit.
+            # to get equal number of points per radial unit.
             p = np.ones(N)
             p[1:] = (self.q_prune/q_distance[1:])**2
 
@@ -167,9 +166,7 @@ class reciprocal:
 
         Calculate the density in k-space for a dynsf-style trajectory frame.
         """
-        if self.debug:
-            sys.stdout.write("processing frame %i\r" % frame['step'])
-            sys.stdout.flush()
+        logger.debug("processing frame %i" % frame['step'])
 
         frame = frame.copy()
         if 'vs' in frame:
