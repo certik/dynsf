@@ -171,7 +171,3 @@ def _alpha_beta_gamma(theta):
     gamma[:,:,I_nz] = 4*itheta3*(sin_t - theta*cos_t)
 
     return alpha, beta, gamma
-
-
-
-

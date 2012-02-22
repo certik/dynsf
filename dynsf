@@ -21,7 +21,10 @@
 
 
 import re
+import os
 import sys
+import optparse
+import logging
 import numpy as np
 
 from itertools import count, islice
@@ -57,9 +60,6 @@ hbar = 6.58211928e-1 # eV fs
 
 
 if __name__ == '__main__':
-    import os
-    import sys
-    import optparse
 
     parser = optparse.OptionParser()
     iogroup = optparse.OptionGroup(parser,
@@ -133,18 +133,36 @@ if __name__ == '__main__':
                       help='Number of threads to use. '
                       'The default value is taken from OMP_NUM_THREADS if it is set, '
                       'otherwise it is set to the number of available "cpus".')
-    parser.add_option('', '--quiet', action='store_false',
-                      default=False,
-                      help='Be quite ...')
+    parser.add_option('-q', '--quiet', action='count', default=0,
+                      help='Increase quietness (opposite of verbosity).')
+    parser.add_option('-v', '--verbose', action='count', default=0,
+                      help='Increase verbosity (opposite of quietness).')
 
 
     (options, args) = parser.parse_args()
-    if not options.f:
-        parser.print_help()
-        sys.exit()
+    quietness= options.quiet-options.verbose
+
+    logger = logging.getLogger('dynsf')
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(r'%(levelname)s: %(message)s'))
+    if quietness < 0:
+        handler.setLevel(logging.DEBUG)
+    elif quietness == 0:
+        handler.setLevel(logging.INFO)
+    elif quietness == 1:
+        handler.setLevel(logging.WARN)
+    elif quietness == 2:
+        handler.setLevel(logging.ERROR)
+    else:
+        handler.setLevel(logging.CRITICAL)
+
+    logger.addHandler(handler)
+    
+    verbose = quietness < 0
 
     if options.f is None:
-        print('A trajectory must be specified with option -f')
+        logger.error('A trajectory must be specified. Use option -f.\n')
+        parser.print_help()
         sys.exit(1)
 
     if options.threads != 0:
@@ -154,7 +172,7 @@ if __name__ == '__main__':
     else:
         num_threads = cpu_count()
     if num_threads < 1:
-        print('Number of threads must be > 0')
+        logger.error('Number of threads must be > 0')
         sys.exit(1)
 
     # Affects rho_j_k
@@ -167,8 +185,8 @@ if __name__ == '__main__':
                     2)
     delta_t = f1['time'] - f0['time']
     if delta_t == 0.0:
-        print('Warning: Delta time is 0.0!')
-        print('         Defaulting to 1 fs [this will affect the output scale]')
+        logger.warn('Delta time is 0.0!')
+        logger.warn('-- Defaulting to 1 fs [this will affect the output scale]')
         delta_t = 1
 
     reference_box = f0['box']
@@ -185,20 +203,16 @@ if __name__ == '__main__':
     else:
         N_tc = 1
 
-    verbose = not options.quiet
-    if verbose:
-        print('Trajectory file = %s' % options.f)
-        print('  With a total of %i particles' % f0['N'])
-        if N_tc > 1:
-            print('  delta_t found to be %f [fs], time window %f [fs]' % \
-                      (delta_t, delta_t*options.nt))
-            dE = 2.0*hbar*np.pi/(options.nt*delta_t)
-            print('  delta_E, max_E = %f, %f [eV]' % \
-                      (dE, dE*options.nt))
+    logger.info('Trajectory file = %s' % options.f)
+    logger.info('-- With a total of %i particles' % f0['N'])
+    if N_tc > 1:
+        logger.info('-- delta_t found to be %f [fs], time window %f [fs]' % \
+                        (delta_t, delta_t*options.nt))
+        dE = 2.0*hbar*np.pi/(options.nt*delta_t)
+        logger.info('-- delta_E, max_E = %f, %f [eV]' % \
+                        (dE, dE*options.nt))
 
-
-    if verbose:
-        print('  Simulation box=\n%s' % str(reference_box))
+    logger.info('Simulation box=\n%s' % str(reference_box))
 
     rec = reciprocal(reference_box,
                      N_max=options.Nk,
@@ -206,11 +220,9 @@ if __name__ == '__main__':
                      ftype='s',
                      debug=verbose)
 
-    if verbose:
-        print('  Nk points = %i' % len(rec.k_distance))
-        print('  k_max = %f --> x_min = %f [nm]' % \
-                  (options.k_max, 2.0*np.pi/options.k_max))
-
+    logger.info('Nk points = %i' % len(rec.k_distance))
+    logger.info('k_max = %f --> x_min = %f [nm]' % \
+                    (options.k_max, 2.0*np.pi/options.k_max))
 
     assert options.stride > 0
     N_stride = options.stride
@@ -263,8 +275,6 @@ if __name__ == '__main__':
     # This is the "main loop"
     for wind in itraj_window:
         foreach(curry(calc_corr, wind), xrange(len(wind)), threads=num_threads)
-
-    print("") #kludge
 
 
     F_k_t_full = [F_k_t_avs[m].get_av() for m, _, _ in mij_list]
