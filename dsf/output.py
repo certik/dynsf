@@ -16,17 +16,27 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-__all__ = ['create_mfile']
+__all__ = ['create_mfile', 'create_pfile']
 
 import numpy as np
+import logging
+
+logger = logging.getLogger('dynsf')
 
 def create_mfile(filename, output):
-    with open(filename, 'w') as f:
+    with open(filename, 'w') as fh:
         popts = np.get_printoptions()
         np.set_printoptions(threshold='inf',
                             linewidth='inf')
 
         for v, n, desc in output:
-            f.write("\n%% %s\n%s = \\\n%s;\n" % (desc, n, str(v)))
+            fh.write("\n%% %s\n%s = \\\n%s;\n" % (desc, n, str(v)))
         
         np.set_printoptions(**popts)
+        logger.info('Wrote Matlab-style output to %s' % fh.name)
+
+def create_pfile(filename, output):
+    import cPickle
+    with open(filename, 'w') as fh:
+        cPickle.dump(output, fh)
+        logger.info('Wrote pickled output to %s' % fh.name)

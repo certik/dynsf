@@ -96,7 +96,7 @@ class reciprocal_processor:
         return frame
 
 
-def get_prune_distance(max_points, max_q, vol_q):
+def get_prune_distance(max_points, max_q, q_vol):
     """Return the prune distance for q/k-points in the isotropic case
 
     max_points corresponds to the wanted number of resulting q/k-points,

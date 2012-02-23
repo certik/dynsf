@@ -29,6 +29,7 @@ import numpy as np
 
 from itertools import count, islice
 
+from dsf.output import *
 from dsf.traj_io import get_itraj, iwindow, curry
 from dsf.reciprocal import reciprocal_isotropic, reciprocal_line
 import dsf.filon as filon
@@ -83,8 +84,10 @@ if __name__ == '__main__':
                        'atoms can be indexed in more than one group. '
                        'If no INDEX_FILE is provided, all atoms will be '
                        'considered identical.')
-    iogroup.add_option('', '--om', metavar='MFILE',
-                       help='Write output as an m-file.')
+    iogroup.add_option('', '--om', metavar='FILE',
+                       help='Write output to FILE as a Matlab style m-file.')
+    iogroup.add_option('', '--op', metavar='FILE',
+                       help='Write output to FILE as a Python pickled file.')
     parser.add_option_group(iogroup)
 
     kgroup = optparse.OptionGroup(parser,
@@ -182,6 +185,9 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit(1)
 
+    if not options.om and not options.op:
+        logger.warn('No output file specified. Results will not be saved')
+
     if options.threads != 0:
         num_threads = options.threads
     elif 'OMP_NUM_THREADS' in os.environ:
@@ -220,7 +226,7 @@ if __name__ == '__main__':
     else:
         N_tc = 1
 
-    logger.info('Trajectory file = %s' % options.trajectory)
+    logger.info('Trajectory file: %s' % options.trajectory)
     logger.info('-- With a total of %i particles' % f0['N'])
     if N_tc > 1:
         logger.info('-- delta_t found to be %f [fs], time window %f [fs]' % \
@@ -229,7 +235,7 @@ if __name__ == '__main__':
         logger.info('-- delta_E, max_E = %f, %f [eV]' % \
                         (dE, dE*options.nt))
 
-    logger.info('Simulation box=\n%s' % str(reference_box))
+    logger.info('Simulation box is\n%s' % str(reference_box))
 
     style = options.sampling_style
     if style not in default_max_kpoints:
@@ -238,15 +244,22 @@ if __name__ == '__main__':
 
     N = options.max_kpoints or default_max_kpoints[style]
     if style == 'line':
-        k_direction = np.array(map(float,options.k_direction.split(',')))
-        rec = reciprocal_line(points=N,
-                              k_direction=k_direction,
-                              )
+        if options.k_direction is None:
+            logger.error('k-direction must be specified in line mode.')
+            sys.exit(1)
+
+        try:
+            k_direction = np.array(map(float,options.k_direction.split(',')))
+        except ValueError:
+            logger.error('k-direction must be specified as a valid comma separated three-tuple.')
+            sys.exit(1)
+
+        rec = reciprocal_line(points=N, k_direction=k_direction)
+
     elif style == 'radial-isotropic':
         rec = reciprocal_isotropic(reference_box,
                                    max_points=N,
-                                   max_k=options.k_max
-                                   )
+                                   max_k=options.k_max)
 
     logger.info('N kpoints = %i' % len(rec.k_distance))
     logger.info('k_max = %f --> x_min = %f [nm]' % \
@@ -261,7 +274,7 @@ if __name__ == '__main__':
                                      max_frames=options.max_frames),
                            width=N_tc,
                            stride=options.stride,
-                           map_fun=rec.process_frame)
+                           element_processor=rec.process_frame)
 
     # TODO....
     # * Assert box is not changed during consecutive frames
@@ -361,7 +374,7 @@ if __name__ == '__main__':
                     'Dynamical structure factor [time, k] (%s)' % pair_types[m])
                    for m,_,_ in mij_list]
 
-    if options.om:
-        from dsf.output import create_mfile
-        create_mfile(options.om, output)
 
+    for fn, writer in ((options.om, create_mfile),
+                       (options.op, create_pfile)):
+        fn and writer(fn, output)
