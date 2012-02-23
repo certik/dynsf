@@ -117,7 +117,7 @@ def find_molfile_plugin_dir():
             if os.path.exists(f):
                 with open(f, 'r') as fh:
                     for L in islice(fh, 10):
-                        m = re.match(r'^(?:set )defaultvmddir=(?:"(/.*)"|(/[^# ]*)).*$', L)
+                        m = re.match(r'^(?:set )?defaultvmddir=(?:"(/.*)"|(/[^# ]*)).*$', L)
                         if m:
                             a,b = m.groups()
                             vmddir = a or b
