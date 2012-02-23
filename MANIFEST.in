@@ -1,1 +1,3 @@
 include build_config.py
+include dynsf.1
+include MANIFEST.in
