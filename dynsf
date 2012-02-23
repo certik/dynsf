@@ -242,7 +242,6 @@ if __name__ == '__main__':
         rec = reciprocal_line(points=N,
                               k_direction=k_direction,
                               )
-        options.k_max = np.sqrt(np.sum(k_direction**2))
     elif style == 'radial-isotropic':
         rec = reciprocal_isotropic(reference_box,
                                    max_points=N,
@@ -251,7 +250,7 @@ if __name__ == '__main__':
 
     logger.info('N kpoints = %i' % len(rec.k_distance))
     logger.info('k_max = %f --> x_min = %f [nm]' % \
-                    (options.k_max, 2.0*np.pi/options.k_max))
+                    (rec.max_k, 2.0*np.pi/rec.max_k))
 
     assert options.stride > 0
     N_stride = options.stride
@@ -316,7 +315,7 @@ if __name__ == '__main__':
 
     # simple smoothing using 'radial' bins
     pts = options.k_bins
-    max_k = options.k_max
+    max_k = rec.max_k
     delta_k = max_k / pts
     rng = (-delta_k/2, max_k+delta_k/2)
     Npoints, edges = np.histogram(rec.k_distance, bins=pts, range=rng)

@@ -76,6 +76,26 @@ def calc_rho_j_k(x, v, k, ftype='d'):
     return rho_k, j_k
 
 
+class reciprocal_processor:
+
+    def process_frame(self, frame):
+        logger.debug("processing frame step %i" % frame['step'])
+        frame = frame.copy()
+        if 'vs' in frame:
+            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,
+                                              ftype=self.ftype)
+                                 for x,v in zip(frame['xs'],frame['vs'])])
+            jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
+            frame['j_ks'] = j_ks
+            frame['jz_ks'] = jz_ks
+            frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
+            frame['rho_ks'] = rho_ks
+        else:
+            frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
+                               for x in frame['xs']]
+        return frame
+
+
 def get_prune_distance(max_points, max_q, vol_q):
     """Return the prune distance for q/k-points in the isotropic case
 
@@ -96,38 +116,7 @@ def get_prune_distance(max_points, max_q, vol_q):
     x = -(u+v)/2 - 1j*(u-v)*sqrt(3)/2
     return np.real(x) + max_q/2
 
-class reciprocal_line:
-    def __init__(self, points=1000, k_direction=(1.0,1.0,1.0), ftype='d'):
-
-        self.ftype = ftype
-        npftype = np_f[ftype]
-        k_direction = require(k_direction, npftype).reshape((3,1))
-        self.k_points = k_direction * np.linspace(0.0, 1.0, points)
-        self.k_distance = sqrt(np.sum(self.k_points**2, axis=0))
-        self.q_distance = self.k_distance * (1.0/(2*pi))
-        self.k_direct = self.k_points.copy()
-        self.k_direct[:,1:] /= self.k_distance[1:].reshape((1,points-1))
-
-    def process_frame(self, frame):
-        logger.debug("processing frame step %i" % frame['step'])
-        frame = frame.copy()
-        if 'vs' in frame:
-            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,
-                                              ftype=self.ftype)
-                                 for x,v in zip(frame['xs'],frame['vs'])])
-            jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
-            frame['j_ks'] = j_ks
-            frame['jz_ks'] = jz_ks
-            frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
-            frame['rho_ks'] = rho_ks
-        else:
-            frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
-                               for x in frame['xs']]
-        return frame
-
-
-
-class reciprocal_isotropic:
+class reciprocal_isotropic(reciprocal_processor):
     def __init__(self, box, max_points=10000, max_k=10.0, ftype='d'):
         """Creates a set of reciprocal coordinates suitable for isotropic
         sampling of k-space. Provide a method to calculate rho_k/j_k
@@ -205,24 +194,15 @@ class reciprocal_isotropic:
         self.k_direct[:,1:] /= self.k_distance[1:].reshape((1,N-1))
 
 
-    def process_frame(self, frame):
-        """Add k-space density to frame
+class reciprocal_line(reciprocal_processor):
+    def __init__(self, points=1000, k_direction=(1.0,1.0,1.0), ftype='d'):
 
-        Calculate the density in k-space for a dynsf-style trajectory frame.
-        """
-        logger.debug("processing frame step %i" % frame['step'])
-        frame = frame.copy()
-        if 'vs' in frame:
-            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,
-                                              ftype=self.ftype)
-                                 for x,v in zip(frame['xs'],frame['vs'])])
-            jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
-            frame['j_ks'] = j_ks
-            frame['jz_ks'] = jz_ks
-            frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
-            frame['rho_ks'] = rho_ks
-        else:
-            frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
-                               for x in frame['xs']]
-        return frame
-
+        self.ftype = ftype
+        npftype = np_f[ftype]
+        k_direction = require(k_direction, npftype).reshape((3,1))
+        self.max_k = sqrt(np.sum(k_direction**2))
+        self.k_points = k_direction * np.linspace(0.0, 1.0, points)
+        self.k_distance = sqrt(np.sum(self.k_points**2, axis=0))
+        self.q_distance = self.k_distance * (1.0/(2*pi))
+        self.k_direct = self.k_points.copy()
+        self.k_direct[:,1:] /= self.k_distance[1:].reshape((1,points-1))
