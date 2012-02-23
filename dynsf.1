@@ -4,11 +4,68 @@
 dynsf \- calculate the dynamical structure factor
 
 .SH SYNOPSIS
-.B dynsf
+.SY dynsf
+\fB-f\fR \fITRAJECTORY_FILE\fR
+.OP \-hqv
+.OP \-n INDEX_FILE
+.OP \--om MFILE
+.OP \--threads THREADS
+.OP \--Nk KPOINTS
+.OP \--k-max KMAX
+.OP \--k-bins BINS
+.OP \--nt
+.OP \--max-frames FRAMES
+.OP \--step STEP
+.OP \--stride STRIDE
 
+.SH AVAILABILITY
 .SH DESCRIPTION
 
 .SH OPTIONS
+.TP
+\fB-f\fR \fITRAJECTORY_FILE\fR, \fB--trajectory\fR=\fITRAJECTORY_FILE\fR
+The data from which the dynamical structure factor should be calculated.
+
+Which formats are supported dependes on other third-party software.
+If VMD is available, it's molfile-plugin framework may be used.
+As of VMD version 1.9.0, molfile-plugin contains the following plugins
+with corresponding expected file suffixes
+
+.RS
+.IP ""
+binposplugin         binpos
+.br
+crdplugin            mdcrd,crd
+.br
+netcdfplugin         nc
+.br
+dcdplugin            dcd
+.br
+cpmdplugin           cpmd
+.br
+dlpolyplugin         dlpolyhist
+.br
+gromacsplugin        xtc
+.br
+lammpsplugin         lammpstrj
+.br
+vaspxmlplugin        xml
+.br
+vaspoutcarplugin     OUTCAR
+.br
+vtfplugin            vtf
+.br
+xsfplugin            axsf,xsf
+.br
+xyzplugin            xyz,xmol
+.RE
+
+If Gromacs is available and VMD is not,
+gmllib can be used for reading Gromacs style xtc-files.
+
+And if neither VMD or Gromacs is found, dynsf comes with
+its own lammps-trajectory reader (which is implemented in python
+and comparatively slow).
 
 .SH EXAMPLES
 
