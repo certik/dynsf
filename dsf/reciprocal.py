@@ -16,7 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-__all__ = ['reciprocal_isotropic']
+__all__ = ['reciprocal_isotropic', 'reciprocal_line']
 
 
 import sys
@@ -96,9 +96,39 @@ def get_prune_distance(max_points, max_q, vol_q):
     x = -(u+v)/2 - 1j*(u-v)*sqrt(3)/2
     return np.real(x) + max_q/2
 
+class reciprocal_line:
+    def __init__(self, points=1000, kdirection=(1.0,1.0,1.0), ftype='d'):
+
+        self.ftype = ftype
+        npftype = np_f[ftype]
+        kdirection = require(kdirection, npftype).reshape((3,1))
+        self.k_points = kdirection * np.linspace(0.0, 1.0, points)
+        self.k_distance = sqrt(np.sum(self.k_points**2, axis=0))
+        self.q_distance = self.k_distance * (1.0/(2*pi))
+        self.k_direct = self.k_points.copy()
+        self.k_direct[:,1:] /= self.k_distance[1:].reshape((1,points-1))
+
+    def process_frame(self, frame):
+        logger.debug("processing frame step %i" % frame['step'])
+        frame = frame.copy()
+        if 'vs' in frame:
+            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,
+                                              ftype=self.ftype)
+                                 for x,v in zip(frame['xs'],frame['vs'])])
+            jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
+            frame['j_ks'] = j_ks
+            frame['jz_ks'] = jz_ks
+            frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
+            frame['rho_ks'] = rho_ks
+        else:
+            frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
+                               for x in frame['xs']]
+        return frame
+
+
 
 class reciprocal_isotropic:
-    def __init__(self, box, max_points=None, max_k=10.0, ftype='d'):
+    def __init__(self, box, max_points=10000, max_k=10.0, ftype='d'):
         """Creates a set of reciprocal coordinates suitable for isotropic
         sampling of k-space. Provide a method to calculate rho_k/j_k
         for trajectory frames.
@@ -117,7 +147,8 @@ class reciprocal_isotropic:
 
         ftype can be either 'd' or 's' (double or single precission)
         """
-        assert(max_points is None or max_points > 1000)
+
+        assert(max_points > 1000)
 
         self.max_k = max_k
         self.max_points = max_points
@@ -133,7 +164,7 @@ class reciprocal_isotropic:
         q_vol = prod(q_mins)
         self.q_mins = q_mins
 
-        if max_points is None or max_points > pi*max_q**3/(6*q_vol):
+        if max_points > pi*max_q**3/(6*q_vol):
             # Use all k-points, do not throw any away
             self.q_prune = None
         else:
@@ -171,15 +202,15 @@ class reciprocal_isotropic:
         self.k_distance = 2.0*pi*q_distance
         N = len(q_distance)
         self.k_direct = k_points.copy()
-        self.k_direct[:,1:] /= self.k_distance[1:].reshape((1,N))
+        self.k_direct[:,1:] /= self.k_distance[1:].reshape((1,N-1))
+
 
     def process_frame(self, frame):
         """Add k-space density to frame
 
         Calculate the density in k-space for a dynsf-style trajectory frame.
         """
-        logger.debug("processing frame %i" % frame['step'])
-
+        logger.debug("processing frame step %i" % frame['step'])
         frame = frame.copy()
         if 'vs' in frame:
             rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,

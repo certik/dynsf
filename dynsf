@@ -30,7 +30,7 @@ import numpy as np
 from itertools import count, islice
 
 from dsf.traj_io import get_itraj, iwindow, curry
-from dsf.reciprocal import reciprocal_isotropic as reciprocal
+from dsf.reciprocal import reciprocal_isotropic, reciprocal_line
 import dsf.filon as filon
 
 from dsf.handythread import foreach
@@ -58,6 +58,9 @@ class averager:
 
 hbar = 6.58211928e-1 # eV fs
 
+default_max_kpoints = {'radial-isotropic':40000,
+                       'line':1000,
+                       }
 
 if __name__ == '__main__':
 
@@ -89,18 +92,36 @@ if __name__ == '__main__':
                                   'Options controlling k-point related parameters, '
                                   'i.e. things affecting spacial and reciprocal '
                                   'resolutions and limits.')
-    kgroup.add_option('','--Nk', metavar='KPOINTS', type='int',
-                      default=40000,
+    kgroup.add_option('', '--sampling-style', metavar='STYLE',
+                      default='radial-isotropic',
+                      help='Decide how to sample kspace. '
+                      'Possible values are "radial-isotropic" (default) for sampling '
+                      'isotropic systems, or "line" to sample along a certain '
+                      'direction.')
+    kgroup.add_option('','--max-kpoints', metavar='KPOINTS', type='int',
+                      default=0,
                       help='Maximum number of points used to sample k-space. '
-                      'Puts an approximate upper bound by randomly de-selecting '
-                      'points. Default value is 40000, KPOINTS=-1 implies no limit.')
+                      'When STYLE="radial-isotropic", puts an (approximate) '
+                      'upper bound by randomly de-selecting points (default value '
+                      '%d). When STYLE="line", selects KPOINTS points along '
+                      'vector KDIRECTION (default value %d).'
+                      '' % (default_max_kpoints['radial-isotropic'],
+                            default_max_kpoints['line']))
     kgroup.add_option('','--k-max', metavar='KMAX', type='float', default=60,
-                      help='Largest k-value to consider (in "2*pi*nm^-1"). '
+                      help='For STYLE="radial-isotropic". '
+                      'Largest k-value to consider (in "2*pi*nm^-1"). '
                       'Default value for KMAX is 60. ')
+    kgroup.add_option('','--k-direction', metavar='KDIRECTION',
+                      help='For STYLE="line". '
+                      'Direction in k-space to consider. '
+                      'KPOINTS points will be evenly placed between '
+                      '0,0,0 and KDIRECTION. Given as three '
+                      'comma separated values.')
     kgroup.add_option('','--k-bins', metavar='BINS', type='int',
                       default=80,
                       help='Number of "radial" bins to use (between 0 and KMAX). ')
     parser.add_option_group(kgroup)
+
 
     tgroup = optparse.OptionGroup(parser, 'Time-related options',
                                   'Options controlling timestep, length of time '
@@ -122,7 +143,7 @@ if __name__ == '__main__':
                       'Default STEP is 1, meaning every frame. '
                       'STEP affects dt and hence the smallest time resolved.')
     tgroup.add_option('','--stride', metavar='STRIDE', type='int', default=1,
-                      help='Stride STRIDE frames between considered trajectory '
+                      help='Stride STRIDE frames between consecutive trajectory '
                       'windows. This does not affect dt. '
                       'If e.g. STRIDE > TIME_CORR_STEPS, some frames will '
                       'be completely unused.')
@@ -144,20 +165,19 @@ if __name__ == '__main__':
     logger = logging.getLogger('dynsf')
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(r'%(levelname)s: %(message)s'))
-    if quietness < 0:
-        handler.setLevel(logging.DEBUG)
-    elif quietness == 0:
-        handler.setLevel(logging.INFO)
-    elif quietness == 1:
-        handler.setLevel(logging.WARN)
-    elif quietness == 2:
-        handler.setLevel(logging.ERROR)
-    else:
-        handler.setLevel(logging.CRITICAL)
-
     logger.addHandler(handler)
+    if quietness < 0:
+        logger.setLevel(logging.DEBUG)
+    elif quietness == 0:
+        logger.setLevel(logging.INFO)
+    elif quietness == 1:
+        logger.setLevel(logging.WARN)
+    elif quietness == 2:
+        logger.setLevel(logging.ERROR)
+    else:
+        logger.setLevel(logging.CRITICAL)
 
-    if options.f is None:
+    if options.trajectory is None:
         logger.error('A trajectory must be specified. Use option -f.\n')
         parser.print_help()
         sys.exit(1)
@@ -176,7 +196,7 @@ if __name__ == '__main__':
     os.environ['OMP_NUM_THREADS'] = str(num_threads)
 
 
-    f0, f1 = islice(get_itraj(options.f,
+    f0, f1 = islice(get_itraj(options.trajectory,
                               index_file=options.n,
                               step=options.step),
                     2)
@@ -200,7 +220,7 @@ if __name__ == '__main__':
     else:
         N_tc = 1
 
-    logger.info('Trajectory file = %s' % options.f)
+    logger.info('Trajectory file = %s' % options.trajectory)
     logger.info('-- With a total of %i particles' % f0['N'])
     if N_tc > 1:
         logger.info('-- delta_t found to be %f [fs], time window %f [fs]' % \
@@ -211,19 +231,30 @@ if __name__ == '__main__':
 
     logger.info('Simulation box=\n%s' % str(reference_box))
 
-    rec = reciprocal(reference_box,
-                     N_max=options.Nk,
-                     k_max=options.k_max,
-                     ftype='s')
+    style = options.sampling_style
+    if style not in default_max_kpoints:
+        logger.error('Unknown style %s' % style)
+        sys.exit(1)
 
-    logger.info('Nk points = %i' % len(rec.k_distance))
+    N = options.max_kpoints or default_max_kpoints[style]
+    if style == 'line':
+        rec = reciprocal_line(points=N,
+                              kdirection=map(float,options.k_direction.split(','))
+                              )
+    elif style == 'radial-isotropic':
+        rec = reciprocal_isotropic(reference_box,
+                                   max_points=N,
+                                   max_k=options.k_max
+                                   )
+
+    logger.info('N kpoints = %i' % len(rec.k_distance))
     logger.info('k_max = %f --> x_min = %f [nm]' % \
                     (options.k_max, 2.0*np.pi/options.k_max))
 
     assert options.stride > 0
     N_stride = options.stride
 
-    itraj_window = iwindow(get_itraj(options.f,
+    itraj_window = iwindow(get_itraj(options.trajectory,
                                      index_file=options.n,
                                      step=options.step,
                                      max_frames=options.max_frames),
@@ -270,8 +301,10 @@ if __name__ == '__main__':
                                                 fi['rho_ks'][j].conjugate())
 
     # This is the "main loop"
-    for wind in itraj_window:
-        foreach(curry(calc_corr, wind), xrange(len(wind)), threads=num_threads)
+    for window in itraj_window:
+        logger.debug("processing window step %i to %i" % (window[0]['step'],
+                                                          window[-1]['step']))
+        foreach(curry(calc_corr, window), xrange(len(window)), threads=num_threads)
 
 
     F_k_t_full = [F_k_t_avs[m].get_av() for m, _, _ in mij_list]
