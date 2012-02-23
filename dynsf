@@ -238,9 +238,11 @@ if __name__ == '__main__':
 
     N = options.max_kpoints or default_max_kpoints[style]
     if style == 'line':
+        k_direction = np.array(map(float,options.k_direction.split(',')))
         rec = reciprocal_line(points=N,
-                              kdirection=map(float,options.k_direction.split(','))
+                              k_direction=k_direction,
                               )
+        options.k_max = np.sqrt(np.sum(k_direction**2))
     elif style == 'radial-isotropic':
         rec = reciprocal_isotropic(reference_box,
                                    max_points=N,

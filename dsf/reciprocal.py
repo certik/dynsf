@@ -97,12 +97,12 @@ def get_prune_distance(max_points, max_q, vol_q):
     return np.real(x) + max_q/2
 
 class reciprocal_line:
-    def __init__(self, points=1000, kdirection=(1.0,1.0,1.0), ftype='d'):
+    def __init__(self, points=1000, k_direction=(1.0,1.0,1.0), ftype='d'):
 
         self.ftype = ftype
         npftype = np_f[ftype]
-        kdirection = require(kdirection, npftype).reshape((3,1))
-        self.k_points = kdirection * np.linspace(0.0, 1.0, points)
+        k_direction = require(k_direction, npftype).reshape((3,1))
+        self.k_points = k_direction * np.linspace(0.0, 1.0, points)
         self.k_distance = sqrt(np.sum(self.k_points**2, axis=0))
         self.q_distance = self.k_distance * (1.0/(2*pi))
         self.k_direct = self.k_points.copy()
