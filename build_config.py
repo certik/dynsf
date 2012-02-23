@@ -17,3 +17,12 @@ local_linker = local_compiler
 # local_link_shared = ['-shared']
 # extra_link_args = ['-openmp']
 
+
+# # Example: Use pgcc instead of the default (gcc) compiler
+# #
+# local_compiler = 'pgcc'
+# extra_compile_args = ['-mp=numa', '-O4', '-Msafeptr', '-fPIC']
+
+# local_linker = local_compiler
+# local_link_shared = ['-shared']
+# extra_link_args = ['-mp']
