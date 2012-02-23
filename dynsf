@@ -30,7 +30,7 @@ import numpy as np
 from itertools import count, islice
 
 from dsf.traj_io import get_itraj, iwindow, curry
-from dsf.reciprocal import reciprocal
+from dsf.reciprocal import reciprocal_isotropic as reciprocal
 import dsf.filon as filon
 
 from dsf.handythread import foreach

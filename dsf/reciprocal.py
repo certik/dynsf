@@ -16,7 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-__all__ = ['reciprocal']
+__all__ = ['reciprocal_isotropic']
 
 
 import sys
@@ -26,9 +26,10 @@ import logging
 from numpy import linalg, array, arange, require, nonzero, pi, sqrt, prod
 from ctypes import cdll, byref, c_int, c_float, POINTER
 
+logger = logging.getLogger('dynsf')
 
-np_f = {'d' : np.float64, 's' : np.float32}
-np_c = {'d' : np.complex128, 's' : np.complex64}
+np_f = dict(d=np.float64, s=np.float32)
+np_c = dict(d=np.complex128, s=np.complex64)
 np_ndp = np.ctypeslib.ndpointer
 
 _lib = {}
@@ -75,31 +76,51 @@ def calc_rho_j_k(x, v, k, ftype='d'):
     return rho_k, j_k
 
 
-logger = logging.getLogger('dynsf')
+def get_prune_distance(max_points, max_q, vol_q):
+    """Return the prune distance for q/k-points in the isotropic case
 
-class reciprocal:
-    def __init__(self, box, N_max=-1, k_max=10.0, ftype='d'):
-        """Creates a set of reciprocal coordinates, and calculate rho_k/j_k
-        for a trajectory frame.
+    max_points corresponds to the wanted number of resulting q/k-points,
+    max_q corresponds to the maximum q-value in the resulting q/k-point set,
+    vol_q corresponds to the q-space volume for a single q-point.
+    If points are selected from the full grid with probability
+    min(1, (q_prune/|q|)^2), k-space will on average be sampled with
+    an equal number of points per radial unit (for q > q_prune).
+    """
+    # Use Cardano's formula to find k_prune
+    p = -3.0*max_q**2/4
+    q = 3.0*max_points*q_vol/pi - max_q**3/4
+    D = (p/3)**3 + (q/2)**2
+
+    u = (-q/2+sqrt(D+0j))**(1.0/3)
+    v = (-q/2-sqrt(D+0j))**(1.0/3)
+    x = -(u+v)/2 - 1j*(u-v)*sqrt(3)/2
+    return np.real(x) + max_q/2
 
 
-        Optionally limit the set to approximately N_max points by
+class reciprocal_isotropic:
+    def __init__(self, box, max_points=None, max_k=10.0, ftype='d'):
+        """Creates a set of reciprocal coordinates suitable for isotropic
+        sampling of k-space. Provide a method to calculate rho_k/j_k
+        for trajectory frames.
+
+
+        Optionally limit the set to approximately max_points points by
         randomly removing points from a "fully populated grid".
         The points are removed in such a way that for k > k_prune,
         the points will be radially uniformely distributed
-        (the value of k_prune is calculated from k_max, N_max,
+        (the value of k_prune is calculated from max_k, max_points,
         and the shape of the box).
 
-        Variables named k_ (such as input argument k_max) are expected
+        Variables named k-something (such as input argument max_k) are expected
         to be "physicist reciprocal length" (i.e. _with_ 2*pi factor).
-        Variables named q_ are expected to be without the 2*pi factor.
+        Variables named q-something are expected to be without the 2*pi factor.
 
         ftype can be either 'd' or 's' (double or single precission)
         """
-        assert(N_max == -1 or N_max > 1000)
+        assert(max_points is None or max_points > 1000)
 
-        self.k_max = k_max
-        self.N_max = N_max
+        self.max_k = max_k
+        self.max_points = max_points
 
         self.ftype = ftype
         npftype = np_f[ftype]
@@ -107,28 +128,19 @@ class reciprocal:
         # B is the "crystallographic" reciprocal vectors
         self.B = linalg.inv(self.A.transpose())
 
-        q_max = k_max/(2.0*pi)
+        max_q = max_k/(2.0*pi)
         q_mins = array([linalg.norm(b) for b in self.B])
         q_vol = prod(q_mins)
         self.q_mins = q_mins
-        self.q_vol = q_vol
 
-        if N_max == -1 or N_max > pi*q_max**3/(6*q_vol):
+        if max_points is None or max_points > pi*max_q**3/(6*q_vol):
             # Use all k-points, do not throw any away
             self.q_prune = None
         else:
-            # Use Cardano's formula to find k_prune
-            p = -3.0*q_max**2/4
-            q = 3.0*N_max*q_vol/pi - q_max**3/4
-            D = (p/3)**3 + (q/2)**2
-            #assert D < 0.0
-            u = (-q/2+sqrt(D+0j))**(1.0/3)
-            v = (-q/2-sqrt(D+0j))**(1.0/3)
-            x = -(u+v)/2 - 1j*(u-v)*sqrt(3)/2
-            self.q_prune = np.real(x) + q_max/2
+            self.q_prune = get_prune_distance(max_points, max_q, q_vol)
 
         b1, b2, b3 = [(2*pi)*x.reshape((3,1,1,1)) for x in self.B]
-        N_k1, N_k2, N_k3 = [np.ceil(q_max/dq) for dq in q_mins]
+        N_k1, N_k2, N_k3 = [np.ceil(max_q/dq) for dq in q_mins]
         k_points = \
             b1 * arange(N_k1, dtype=npftype).reshape((1,N_k1,1,   1)) + \
             b2 * arange(N_k2, dtype=npftype).reshape((1,1,   N_k2,1)) + \
@@ -136,10 +148,10 @@ class reciprocal:
         k_points = k_points.reshape((3, k_points.size/3))
         q_distance = sqrt(np.sum(k_points**2, axis=0))*(1.0/(2*pi))
 
-        I, = nonzero(q_distance <= q_max)
+        I, = nonzero(q_distance <= max_q)
         I = I[q_distance[I].argsort()]
         q_distance = q_distance[I]
-        k_points = k_points[:,I]    # All k_points < k_max, sorted by length
+        k_points = k_points[:,I]    # All k_points < max_k, sorted by length
 
         if self.q_prune is not None:
             N = len(q_distance)
