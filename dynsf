@@ -327,39 +327,45 @@ if __name__ == '__main__':
         Ct_k_t_full = [Ct_k_t_avs[m].get_av() for m, _, _ in mij_list]
 
     # simple smoothing using 'radial' bins
-    pts = options.k_bins
     max_k = rec.max_k
-    delta_k = max_k / pts
-    rng = (-delta_k/2, max_k+delta_k/2)
-    Npoints, edges = np.histogram(rec.k_distance, bins=pts, range=rng)
-    F_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
+    delta_k = max_k / (options.k_bins-1)
+    k_range = (-delta_k/2, max_k+delta_k/2)
+    k_bin_count, edges = np.histogram(rec.k_distance,
+                                      bins=options.k_bins,
+                                      range=k_range)
+    k = 0.5 * (edges[1:]+edges[:-1])
+
+    I = np.nonzero(k_bin_count)
+    k_bin_count = k_bin_count[I]
+    k = k[I]
+    k_bins = len(k)
+    if k_bins != options.k_bins:
+        logger.info('Ignoring %d k-bins without k-point coverage' % (
+                options.k_bins-k_bins))
+
+    F_k_t = [np.zeros((N_tc, k_bins)) for _ in mij_list]
     if calculate_current:
-        Cl_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
-        Ct_k_t =    [np.zeros((N_tc, pts)) for _ in mij_list]
-    k = 0.5*(edges[1:]+edges[:-1])
-    t = delta_t*np.arange(N_tc)
+        Cl_k_t = [np.zeros((N_tc, k_bins)) for _ in mij_list]
+        Ct_k_t = [np.zeros((N_tc, k_bins)) for _ in mij_list]
+
+    t = delta_t * np.arange(N_tc)
 
     for m,_,_ in mij_list:
         ci = 0
-        for i, n in enumerate(Npoints):
-            if n == 0:
-                F_k_t[m][:,i] = 0.0 #np.NaN
-                if calculate_current:
-                    Cl_k_t[m][:,i] = 0.0 #np.NaN
-                    Ct_k_t[m][:,i] = 0.0 #np.NaN
-            else:
-                s = F_k_t_full[m][:,ci:ci+n]
-                F_k_t[m][:,i] = np.mean(s, axis=1)
-                if calculate_current:
-                    s = Cl_k_t_full[m][:,ci:ci+n]
-                    Cl_k_t[m][:,i] = np.mean(s, axis=1)
-                    s = Ct_k_t_full[m][:,ci:ci+n]
-                    Ct_k_t[m][:,i] = np.mean(s, axis=1)
-                ci += n
+        for i, n in enumerate(k_bin_count):
+            F_k_t[m][:,i] = np.mean(F_k_t_full[m][:,ci:ci+n],
+                                    axis=1)
+            if calculate_current:
+                Cl_k_t[m][:,i] = np.mean(Cl_k_t_full[m][:,ci:ci+n],
+                                         axis=1)
+                Ct_k_t[m][:,i] = np.mean(Ct_k_t_full[m][:,ci:ci+n],
+                                         axis=1)
+            ci += n
 
     output = []
-    output += [(k, 'k', 'k-values (actually, bin centers) [nm^1]'),
-               (t, 't', 'time values [fs]')]
+    output += [(k, 'k', 'k-values (technically, bin centers) [nm^1]'),
+               (t, 't', 'time values [fs]'),
+               (k_bin_count, 'k_bin_count', 'Number of k-points per bin')]
     output += [(F_k_t[m], 'F_k_t_%i'%m,
                 'Intermediate scattering function [time, k] (%s)' % pair_types[m])
                for m,_,_ in mij_list]
