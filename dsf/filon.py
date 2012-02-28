@@ -62,7 +62,7 @@ def fourier_cos(f, dx, k=None):
     """
 
     if k is None:
-        k = linspace(0.0, pi/dx, f.shape[0])
+        k = linspace(0.0, 2*pi/dx, f.shape[0])
 
     return k, 2*cos_integral(f, dx, k, x0=0.0)
 
