@@ -367,7 +367,7 @@ if __name__ == '__main__':
                (t, 't', 'time values [fs]'),
                (k_bin_count, 'k_bin_count', 'Number of k-points per bin')]
     output += [(F_k_t[m], 'F_k_t_%i'%m,
-                'Intermediate scattering function [time, k] (%s)' % pair_types[m])
+                'Partial intermediate scattering function [time, k] (%s)' % pair_types[m])
                for m,_,_ in mij_list]
 
     if len(t) > 2:
@@ -377,7 +377,7 @@ if __name__ == '__main__':
         output += [(w, 'w', 'omega [fs^-1]'),
                    (hbar*w, 'E', 'energy [eV]')]
         output += [(S_k_w[m], 'S_k_w_%i'%m,
-                    'Dynamical structure factor [time, k] (%s)' % pair_types[m])
+                    'Partial dynamical structure factor [omega, k] (%s)' % pair_types[m])
                    for m,_,_ in mij_list]
 
 
