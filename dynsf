@@ -126,7 +126,7 @@ if __name__ == '__main__':
                      'KPOINTS points will be evenly placed between '
                      '0,0,0 and KDIRECTION. Given as three '
                      'comma separated values.')
-    kline.add_option('','--k-points', metavar='KPOINTS',
+    kline.add_option('','--k-points', metavar='KPOINTS', type='int',
                      default=100,
                      help='Numbers of uniformly distributed points between '
                      '0,0,0 and KDIRECTION to consider. Default value is 100.')
