@@ -345,21 +345,22 @@ if __name__ == '__main__':
 
     # Extract correlation (all k-point) averages
     # and calculate average per 'radial' bin
-    bin_averager = fixed_bin_averager(rec.max_k, options.k_bins, rec.k_distance)
+    k_bins = fixed_bin_averager(rec.max_k, options.k_bins, rec.k_distance)
+    k_bin_averager = curry(k_bins.bin, axis=1)
 
     F_k_t_full = [F.get_av() for F in F_k_t_avs]
-    F_k_t = [bin_averager.bin(F, axis=1) for F in F_k_t_full]
+    F_k_t = map(k_bin_averager, F_k_t_full)
 
     if calculate_current:
         Cl_k_t_full = [C.get_av() for C in Cl_k_t_avs]
         Ct_k_t_full = [C.get_av() for C in Cl_k_t_avs]
-        Cl_k_t = [bin_averager.bin(C, axis=1) for C in Cl_k_t_full]
-        Ct_k_t = [bin_averager.bin(C, axis=1) for C in Ct_k_t_full]
+        Cl_k_t = map(k_bin_averager, Cl_k_t_full)
+        Ct_k_t = map(k_bin_averager, Ct_k_t_full)
 
 
     t = delta_t * np.arange(N_tc)
-    k = bin_averager.x.copy()
-    k_bin_count = bin_averager.bin_count.copy()
+    k = k_bins.x.copy()
+    k_bin_count = k_bins.bin_count.copy()
 
     # Collect stuff that should be outputed
     output = []
