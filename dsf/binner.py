@@ -16,31 +16,57 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.
 
-__all__ = ['binner']
+__all__ = ['fixed_bin_averager']
 
 import numpy as np
+import logging
+logger = logging.getLogger('dynsf')
 
 
-def binner(y, x=None, points=30):
-    if x is None:
-        x = np.arange(len(y))
+class fixed_bin_averager:
+    """Class for averaging data sets of points (x,y) with
+       a priori decided positions (x), over a pre-defined number
+       of equally sized, linearely distriuted bins.
 
-    delta = x[1]-x[0]
-    max_x = x[-1]
-    rng = (-0.5*delta, max_x+0.5*delta)
-    Npoints, edges = np.histogram(x, bins=points, range=rng)
-    av = np.zeros(points)
-    sd = np.zeros(points)
+       This is used to get an average of y for a set of
+       lineary spaced x values when a possibly large set
+       of {y(x)} is given.
+    """
+    def __init__(self, x_max, x_bins, x_distances, x_min=0.0):
+        assert x_max > x_min
+        assert x_bins > 1
 
-    xnew = 0.5*(edges[1:]+edges[:-1])
+        self.delta_x = (x_max-x_min) / (x_bins-1)
+        x_range = (-self.delta_x/2, x_max+self.delta_x/2)
+        bin_count, edges = np.histogram(x_distances,
+                                        bins=x_bins,
+                                        range=x_range)
+        self.x_linspace = 0.5 * (edges[1:]+edges[:-1])
 
-    ci = 0
-    for i, n in enumerate(Npoints):
-        if n == 0:
-            av[i] = np.NaN
-        else:
-            s = y[ci:ci+n]
-            av[i] = np.mean(s)
-            sd[i] = np.std(s)
+        I = np.nonzero(bin_count)
+        self.bin_count = bin_count[I]
+        self.x = self.x_linspace[I]
+        self.input_length = len(x_distances)
+        self.bins = len(self.x)
+        if self.bins != x_bins:
+            logger.info('Ignoring %d bins without coverage' % (
+                    x_bins-self.bins))
+
+    def bin(self, y, axis=0):
+        y = np.require(y)
+        assert y.shape[axis] == self.input_length
+
+        res_shape = list(y.shape)
+        res_shape[axis] = self.bins
+        result = np.zeros(res_shape)
+
+        ci = 0
+        ind_x = [slice(None)]*len(y.shape)
+        ind_y = [slice(None)]*len(y.shape)
+        for i, n in enumerate(self.bin_count):
+            ind_x[axis] = i
+            ind_y[axis] = slice(ci, ci+n)
+            result[ind_x] = np.mean(y[ind_y], axis=axis)
             ci += n
-    return (av, sd, xnew)
+
+        return result

@@ -33,6 +33,7 @@ from dsf.output import *
 from dsf.traj_io import get_itraj, iwindow, curry
 from dsf.reciprocal import reciprocal_isotropic, reciprocal_line
 import dsf.filon as filon
+from dsf.binner import fixed_bin_averager
 
 from dsf.handythread import foreach
 from multiprocessing import cpu_count
@@ -300,7 +301,7 @@ if __name__ == '__main__':
 
     m = count(0)
     pair_list = [(m.next(),i,j)
-                for i in xrange(Ntypes) for j in xrange(i,Ntypes)]
+                 for i in xrange(Ntypes) for j in xrange(i,Ntypes)]
     pair_types = [particle_types[i]+'-'+particle_types[j] for _, i, j in pair_list]
 
     z = np.zeros(len(rec.q_distance))
@@ -337,47 +338,25 @@ if __name__ == '__main__':
         foreach(curry(calc_corr, window), xrange(len(window)), threads=num_threads)
 
 
-    F_k_t_full = [F_k_t_avs[m].get_av() for m,_,_ in pair_list]
+    # Extract correlation (all k-point) averages
+    # and calculate average per 'radial' bin
+    bin_averager = fixed_bin_averager(rec.max_k, options.k_bins, rec.k_distance)
+
+    F_k_t_full = [F.get_av() for F in F_k_t_avs]
+    F_k_t = [bin_averager.bin(F, axis=1) for F in F_k_t_full]
+
     if calculate_current:
-        Cl_k_t_full = [Cl_k_t_avs[m].get_av() for m,_,_ in pair_list]
-        Ct_k_t_full = [Ct_k_t_avs[m].get_av() for m,_,_ in pair_list]
+        Cl_k_t_full = [C.get_av() for C in Cl_k_t_avs]
+        Ct_k_t_full = [C.get_av() for C in Cl_k_t_avs]
+        Cl_k_t = [bin_averager.bin(C, axis=1) for C in Cl_k_t_full]
+        Ct_k_t = [bin_averager.bin(C, axis=1) for C in Ct_k_t_full]
 
-    # simple smoothing using 'radial' bins
-    max_k = rec.max_k
-    delta_k = max_k / (options.k_bins-1)
-    k_range = (-delta_k/2, max_k+delta_k/2)
-    k_bin_count, edges = np.histogram(rec.k_distance,
-                                      bins=options.k_bins,
-                                      range=k_range)
-    k = 0.5 * (edges[1:]+edges[:-1])
-
-    I = np.nonzero(k_bin_count)
-    k_bin_count = k_bin_count[I]
-    k = k[I]
-    k_bins = len(k)
-    if k_bins != options.k_bins:
-        logger.info('Ignoring %d k-bins without k-point coverage' % (
-                options.k_bins-k_bins))
-
-    F_k_t = [np.zeros((N_tc, k_bins)) for _ in pair_list]
-    if calculate_current:
-        Cl_k_t = [np.zeros((N_tc, k_bins)) for _ in pair_list]
-        Ct_k_t = [np.zeros((N_tc, k_bins)) for _ in pair_list]
 
     t = delta_t * np.arange(N_tc)
+    k = bin_averager.x.copy()
+    k_bin_count = bin_averager.bin_count.copy()
 
-    for m,_,_ in pair_list:
-        ci = 0
-        for i, n in enumerate(k_bin_count):
-            F_k_t[m][:,i] = np.mean(F_k_t_full[m][:,ci:ci+n],
-                                    axis=1)
-            if calculate_current:
-                Cl_k_t[m][:,i] = np.mean(Cl_k_t_full[m][:,ci:ci+n],
-                                         axis=1)
-                Ct_k_t[m][:,i] = np.mean(Ct_k_t_full[m][:,ci:ci+n],
-                                         axis=1)
-            ci += n
-
+    # Collect stuff that should be outputed
     output = []
     output += [(k, 'k', 'k-values (technically, bin centers) [nm^1]'),
                (t, 't', 'time values [fs]'),
@@ -387,11 +366,10 @@ if __name__ == '__main__':
                for m,i,j in pair_list]
 
     if len(t) > 2:
-        w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in pair_list])
+        w, S_k_w = zip(*[filon.fourier_cos(F, delta_t) for F in F_k_t])
         w = w[0]
 
-        output += [(w, 'w', 'omega [fs^-1]'),
-                   (hbar*w, 'E', 'energy [eV]')]
+        output += [(w, 'w', 'omega [fs^-1]')]
         output += [(S_k_w[m], 'S_k_w_%i_%i' % (i,j),
                     'Partial dynamical structure factor [omega, k] (%s)' % pair_types[m])
                    for m,i,j in pair_list]
