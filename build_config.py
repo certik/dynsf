@@ -8,14 +8,14 @@ local_compiler = None
 local_linker = local_compiler
 
 
-# # Example: Use icc instead of the default (gcc) compiler
-# #
-# local_compiler = 'icc'
-# extra_compile_args = ['-openmp', '-xHOST', '-O3', '-fno-alias', '-fPIC']
+# Example: Use icc instead of the default (gcc) compiler
+#
+local_compiler = 'icc'
+extra_compile_args = ['-openmp', '-xHOST', '-O3', '-fno-alias', '-fPIC']
 
-# local_linker = local_compiler
-# local_link_shared = ['-shared']
-# extra_link_args = ['-openmp']
+local_linker = local_compiler
+local_link_shared = ['-shared']
+extra_link_args = ['-openmp']
 
 
 # # Example: Use pgcc instead of the default (gcc) compiler
