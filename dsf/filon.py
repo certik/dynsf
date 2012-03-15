@@ -67,22 +67,22 @@ def fourier_cos(f, dx, k=None):
     return k, 2*cos_integral(f, dx, k, x0=0.0)
 
 
-def cos_integral(f, dx, k, x0=0.0, f_dep_on_k=False):
+def cos_integral(f, dx, k, x0=0.0):
     """\int_{x0}^{2n*dx} f(x)*cos(k x) dx
 
     f must have length 2n+1.
     """
-    return _gen_sc_int(f, dx, k, x0, cos, f_dep_on_k)
+    return _gen_sc_int(f, dx, k, x0, cos)
 
-def sin_integral(f, dx, k, x0=0.0, f_dep_on_k=False):
+def sin_integral(f, dx, k, x0=0.0):
     """\int_{x0}^{2n*dx} f(x)*sin(k x) dx
 
     f must have length 2n+1.
     """
-    return _gen_sc_int(f, dx, k, x0, sin, f_dep_on_k)
+    return _gen_sc_int(f, dx, k, x0, sin)
 
 
-def _gen_sc_int(f, dx, k, x0, sc, f_dep_on_k):
+def _gen_sc_int(f, dx, k, x0, sc):
 
     f = require(f)
     k = require(k)
@@ -101,12 +101,6 @@ def _gen_sc_int(f, dx, k, x0, sc, f_dep_on_k):
 
     Nk = len(k)
     N = f_original_shape[0]
-
-    if f_dep_on_k:
-        if f_original_shape[1] != Nk:
-            raise RuntimeError('Wrong shape of f, second axis must match length of k')
-        f_original_shape = (N,)
-        f = f.reshape((N,1,Nk))
 
     Nmax = N-1
     if mod(Nmax, 2) != 0 or N < 3:
