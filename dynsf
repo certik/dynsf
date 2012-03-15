@@ -299,22 +299,22 @@ if __name__ == '__main__':
     Ntypes = len(particle_types)
 
     m = count(0)
-    mij_list = [(m.next(),i,j)
+    pair_list = [(m.next(),i,j)
                 for i in xrange(Ntypes) for j in xrange(i,Ntypes)]
-    pair_types = [particle_types[i]+'-'+particle_types[j] for _, i, j in mij_list]
+    pair_types = [particle_types[i]+'-'+particle_types[j] for _, i, j in pair_list]
 
     z = np.zeros(len(rec.q_distance))
-    F_k_t_avs = [averager(N_tc, z) for _ in mij_list]
+    F_k_t_avs = [averager(N_tc, z) for _ in pair_list]
     if calculate_current:
-        Cl_k_t_avs = [averager(N_tc, z) for _ in mij_list]
-        Ct_k_t_avs = [averager(N_tc, z) for _ in mij_list]
+        Cl_k_t_avs = [averager(N_tc, z) for _ in pair_list]
+        Ct_k_t_avs = [averager(N_tc, z) for _ in pair_list]
 
 
     if calculate_current:
         def calc_corr(window, time_i):
             f0 = window[0]
             fi = window[time_i]
-            for m, i, j in mij_list:
+            for m, i, j in pair_list:
                 F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] *
                                                 fi['rho_ks'][j].conjugate())
                 Cl_k_t_avs[m][time_i] += np.real(f0['jz_ks'][i] *
@@ -326,7 +326,7 @@ if __name__ == '__main__':
         def calc_corr(window, time_i):
             f0 = window[0]
             fi = window[time_i]
-            for m, i, j in mij_list:
+            for m, i, j in pair_list:
                 F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] *
                                                 fi['rho_ks'][j].conjugate())
 
@@ -337,10 +337,10 @@ if __name__ == '__main__':
         foreach(curry(calc_corr, window), xrange(len(window)), threads=num_threads)
 
 
-    F_k_t_full = [F_k_t_avs[m].get_av() for m, _, _ in mij_list]
+    F_k_t_full = [F_k_t_avs[m].get_av() for m,_,_ in pair_list]
     if calculate_current:
-        Cl_k_t_full = [Cl_k_t_avs[m].get_av() for m, _, _ in mij_list]
-        Ct_k_t_full = [Ct_k_t_avs[m].get_av() for m, _, _ in mij_list]
+        Cl_k_t_full = [Cl_k_t_avs[m].get_av() for m,_,_ in pair_list]
+        Ct_k_t_full = [Ct_k_t_avs[m].get_av() for m,_,_ in pair_list]
 
     # simple smoothing using 'radial' bins
     max_k = rec.max_k
@@ -359,14 +359,14 @@ if __name__ == '__main__':
         logger.info('Ignoring %d k-bins without k-point coverage' % (
                 options.k_bins-k_bins))
 
-    F_k_t = [np.zeros((N_tc, k_bins)) for _ in mij_list]
+    F_k_t = [np.zeros((N_tc, k_bins)) for _ in pair_list]
     if calculate_current:
-        Cl_k_t = [np.zeros((N_tc, k_bins)) for _ in mij_list]
-        Ct_k_t = [np.zeros((N_tc, k_bins)) for _ in mij_list]
+        Cl_k_t = [np.zeros((N_tc, k_bins)) for _ in pair_list]
+        Ct_k_t = [np.zeros((N_tc, k_bins)) for _ in pair_list]
 
     t = delta_t * np.arange(N_tc)
 
-    for m,_,_ in mij_list:
+    for m,_,_ in pair_list:
         ci = 0
         for i, n in enumerate(k_bin_count):
             F_k_t[m][:,i] = np.mean(F_k_t_full[m][:,ci:ci+n],
@@ -382,19 +382,19 @@ if __name__ == '__main__':
     output += [(k, 'k', 'k-values (technically, bin centers) [nm^1]'),
                (t, 't', 'time values [fs]'),
                (k_bin_count, 'k_bin_count', 'Number of k-points per bin')]
-    output += [(F_k_t[m], 'F_k_t_%i'%m,
+    output += [(F_k_t[m], 'F_k_t_%i_%i' % (i,j),
                 'Partial intermediate scattering function [time, k] (%s)' % pair_types[m])
-               for m,_,_ in mij_list]
+               for m,i,j in pair_list]
 
     if len(t) > 2:
-        w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in mij_list])
+        w, S_k_w = zip(*[filon.fourier_cos(F_k_t[m], delta_t) for m,_,_ in pair_list])
         w = w[0]
 
         output += [(w, 'w', 'omega [fs^-1]'),
                    (hbar*w, 'E', 'energy [eV]')]
-        output += [(S_k_w[m], 'S_k_w_%i'%m,
+        output += [(S_k_w[m], 'S_k_w_%i_%i' % (i,j),
                     'Partial dynamical structure factor [omega, k] (%s)' % pair_types[m])
-                   for m,_,_ in mij_list]
+                   for m,i,j in pair_list]
 
 
     for fn, writer in ((options.om, create_mfile),
