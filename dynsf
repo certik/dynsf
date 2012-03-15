@@ -217,11 +217,16 @@ if __name__ == '__main__':
     # Affects rho_j_k
     os.environ['OMP_NUM_THREADS'] = str(num_threads)
 
+    try:
+        f0, f1 = islice(get_itraj(options.trajectory,
+                                  index_file=options.n,
+                                  step=options.step),
+                        2)
+    except ValueError:
+        logger.error('Failed to read two consecutive frames to determine '
+                     'delta t. Is the trajectory long enough?')
+        sys.exit(1)
 
-    f0, f1 = islice(get_itraj(options.trajectory,
-                              index_file=options.n,
-                              step=options.step),
-                    2)
     delta_t = f1['time'] - f0['time']
     if delta_t == 0.0:
         logger.warn('Delta time is 0.0!')
@@ -247,9 +252,9 @@ if __name__ == '__main__':
     if N_tc > 1:
         logger.info('-- delta_t found to be %f [fs], time window %f [fs]' % \
                         (delta_t, delta_t*options.nt))
-        dE = 2.0*hbar*np.pi/(options.nt*delta_t)
-        logger.info('-- delta_E, max_E = %f, %f [eV]' % \
-                        (dE, dE*options.nt))
+        dw = 2.0*np.pi/(options.nt*delta_t)
+        logger.info('-- delta_omega, max_omega = %f, %f [fs^-1]' % \
+                        (dw, dw*options.nt))
 
     logger.info('Simulation box is\n%s' % str(reference_box))
 
