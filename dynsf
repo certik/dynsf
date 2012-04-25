@@ -385,8 +385,17 @@ if __name__ == '__main__':
     k = k_bins.x.copy()
     k_bin_count = k_bins.bin_count.copy()
 
+    output = []
+    output += [(k, 'k', 'k-values (technically, bin centers) [nm^1]'),
+               (t, 't', 'time values [fs]'),
+               (k_bin_count, 'k_bin_count', 'Number of k-points per bin')]
+    output += [(F_k_t[m], 'F_k_t_%i_%i' % (i,j),
+                'Partial intermediate scattering function [time, k] (%s)' % pair_types[m])
+               for m,i,j in pair_list]
+
+
     # Create an odd number of linearly spaced k-points, ranging from
-    # the "distance" of the smallest non-empty bin.
+    # the "distance" of the smallest non-empty bin and up.
     k_ = k_bins.x_linspace
     k_ = k_[k_ >= k[1]]
     if not len(k_) % 2:
@@ -402,19 +411,11 @@ if __name__ == '__main__':
             filon.sin_integral(kF_, k_[1]-k_[0], r, k_[0])) + 1
     G_r_t = [F_to_G(F, i) for i, F in enumerate(F_k_t)]
 
-    # Collect stuff that should be outputed
-    output = []
-    output += [(k, 'k', 'k-values (technically, bin centers) [nm^1]'),
-               (t, 't', 'time values [fs]'),
-               (k_bin_count, 'k_bin_count', 'Number of k-points per bin')]
-    output += [(F_k_t[m], 'F_k_t_%i_%i' % (i,j),
-                'Partial intermediate scattering function [time, k] (%s)' % pair_types[m])
-               for m,i,j in pair_list]
-
     output += [(r, 'r', 'r-values for calculated G(r,t) [nm]')]
     output += [(G_r_t[m], 'G_r_t_%i_%i' % (i,j),
                 'Calculated partial van Hove function [time, r] (%s)' % pair_types[m])
                for m,i,j in pair_list]
+
 
     if len(t) > 2:
         w, S_k_w = zip(*[filon.fourier_cos(F, delta_t) for F in F_k_t])
