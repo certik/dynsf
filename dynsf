@@ -38,6 +38,18 @@ from dsf.binner import fixed_bin_averager
 from dsf.handythread import foreach
 from multiprocessing import cpu_count
 
+try:
+    from scipy.interpolate import interp1d
+except ImportError:
+    # Fallback if SciPy isn't available
+    def interp1d(xp, yp):
+        if len(yp.shape) == 1:
+            return lambda x:np.interp(x,xp,yp)
+        elif len(yp.shape) == 2:
+            return lambda x:np.array([np.interp(x,xp,ypi) for ypi in yp])
+        else:
+            raise RuntimeError("yp can only be 1d or 2d")
+
 class averager:
     # Special purpose averager class
     def __init__(self, N_slots, initial=np.zeros(1)):
@@ -59,6 +71,8 @@ class averager:
         return np.array([self.get_single_av(i) for i in range(self._N)])
 
 hbar = 6.58211928e-1 # eV fs
+pi = np.pi
+two_pi = 2.0 * pi
 
 if __name__ == '__main__':
 
@@ -217,6 +231,8 @@ if __name__ == '__main__':
     # Affects rho_j_k
     os.environ['OMP_NUM_THREADS'] = str(num_threads)
 
+    # Read the two first frames to set up references values
+    # box size, number of different particles, time step length, etc
     try:
         f0, f1 = islice(get_itraj(options.trajectory,
                                   index_file=options.n,
@@ -233,28 +249,35 @@ if __name__ == '__main__':
         logger.warn('-- Defaulting to 1 fs [this will affect the output scale]')
         delta_t = 1
 
-    reference_box = f0['box']
-    particle_types = f0['types']
-
-    if 'vs' in f0:
-        calculate_current = True
-    else:
-        calculate_current = False
-
     if options.nt:
         assert(options.nt >= 1)
         N_tc = options.nt + (options.nt+1)%2
     else:
         N_tc = 1
 
-    logger.info('Trajectory file: %s' % options.trajectory)
-    logger.info('-- With a total of %i particles' % f0['N'])
     if N_tc > 1:
         logger.info('-- delta_t found to be %f [fs], time window %f [fs]' % \
                         (delta_t, delta_t*options.nt))
-        dw = 2.0*np.pi/(options.nt*delta_t)
+        dw = two_pi/(options.nt*delta_t)
         logger.info('-- delta_omega, max_omega = %f, %f [fs^-1]' % \
                         (dw, dw*options.nt))
+
+    if 'vs' in f0:
+        calculate_current = True
+    else:
+        calculate_current = False
+
+    a,b,c = reference_box = f0['box']
+    reference_volume = abs(np.dot(np.cross(a,b),c))
+    particle_types = f0['types']
+    particle_counts = [x.shape[1] for x in f0['xs']]
+    particle_densities = [n/reference_volume for n in particle_counts]
+
+    logger.info('Trajectory file: %s' % options.trajectory)
+    logger.info('-- With a total of %i particles, %i types.' % (
+            f0['N'], len(particle_types)))
+    for i, t in enumerate(particle_types):
+        logger.info('-- %d. %d %s' % (i+1, particle_counts[i], t))
 
     logger.info('Simulation box is\n%s' % str(reference_box))
 
@@ -285,7 +308,7 @@ if __name__ == '__main__':
 
     logger.info('N kpoints = %i' % len(rec.k_distance))
     logger.info('k_max = %f --> x_min = %f [nm]' % \
-                    (rec.max_k, 2.0*np.pi/rec.max_k))
+                    (rec.max_k, two_pi/rec.max_k))
 
     assert options.stride > 0
     N_stride = options.stride
@@ -353,7 +376,7 @@ if __name__ == '__main__':
 
     if calculate_current:
         Cl_k_t_full = [C.get_av() for C in Cl_k_t_avs]
-        Ct_k_t_full = [C.get_av() for C in Cl_k_t_avs]
+        Ct_k_t_full = [C.get_av() for C in Ct_k_t_avs]
         Cl_k_t = map(k_bin_averager, Cl_k_t_full)
         Ct_k_t = map(k_bin_averager, Ct_k_t_full)
 
@@ -362,6 +385,23 @@ if __name__ == '__main__':
     k = k_bins.x.copy()
     k_bin_count = k_bins.bin_count.copy()
 
+    # Create an odd number of linearly spaced k-points, ranging from
+    # the "distance" of the smallest non-empty bin.
+    k_ = k_bins.x_linspace
+    k_ = k_[k_ >= k[1]]
+    if not len(k_) % 2:
+        k_ = k_[:-1]
+
+    dr = two_pi/k[-1]
+    r = np.arange(5*dr, pi/k[1], dr)
+    def F_to_G(F, pair_index):
+        _,i,j = pair_list[pair_index]
+        f = 1 / (r*2*pi**2 * particle_densities[j])
+        kF_ = np.transpose(k_*interp1d(k, F - 1)(k_))
+        return f*np.transpose(
+            filon.sin_integral(kF_, k_[1]-k_[0], r, k_[0])) + 1
+    G_r_t = [F_to_G(F, i) for i, F in enumerate(F_k_t)]
+
     # Collect stuff that should be outputed
     output = []
     output += [(k, 'k', 'k-values (technically, bin centers) [nm^1]'),
@@ -369,6 +409,11 @@ if __name__ == '__main__':
                (k_bin_count, 'k_bin_count', 'Number of k-points per bin')]
     output += [(F_k_t[m], 'F_k_t_%i_%i' % (i,j),
                 'Partial intermediate scattering function [time, k] (%s)' % pair_types[m])
+               for m,i,j in pair_list]
+
+    output += [(r, 'r', 'r-values for calculated G(r,t) [nm]')]
+    output += [(G_r_t[m], 'G_r_t_%i_%i' % (i,j),
+                'Calculated partial van Hove function [time, r] (%s)' % pair_types[m])
                for m,i,j in pair_list]
 
     if len(t) > 2:
