@@ -24,13 +24,14 @@ from numpy import sin, cos, pi, mod, \
 
 
 __doc__ = """
-For information about Filon's formula, see e.g.
-Abramowitz Stegun, section 25,
-http://mathworld.wolfram.com/FilonsIntegrationFormula.html,
-Allen Tildesley, Appendix D.
+Python implementation of Filon's integration formula.
 
-If the argument f is a 2D-array, the transformation is done along each individual
-column (axis=0). I.e.
+For information about Filon's formula, see e.g.
+Abramowitz, Stegun, Handbook of Mathematical Functions, section 25,
+http://mathworld.wolfram.com/FilonsIntegrationFormula.html,
+Allen, Tildesley, Computer Simulation of Liquids, Appendix D.
+
+Integration is performed along one dimension (default axis=0), e.g.
 
  [F0[0]  F1[0] ..  FN[0] ]     [f0[0]  f1[0] ..  fN[0] ]
  [   .      .         .  ]     [   .      .         .  ]
@@ -39,16 +40,18 @@ column (axis=0). I.e.
  [F0[Nk] F1[Nk] .. FN[Nk]]     [f0[Nx] f1[Nx] .. fN[Nx]]
 
 where k and Fj have end index Nk, and fj have end index Nx.
-Nk is arbitrarily, and is derived from the length of k.
-Nx must be an even number (i.e. fj should have an odd length).
+Nk is arbitray (implicitly derived from the length of k).
+Due to the algorithm, fj[Nx] must be of odd length (Nx must be an even number),
+and should correspond to a linearly spaced set of data points (separated by
+dx along the integration axis).
 
 sin_integral and cos_integral allows for shifted
-x-intervals by the optional argument x0.
+integration intervals by the optional argument x0.
 
 """
 
 
-def fourier_cos(f, dx, k=None):
+def fourier_cos(f, dx, k=None, axis=0):
     """Calculate a direct fourier cosine transform of function f(x) using
     Filon's integration method
 
@@ -59,99 +62,103 @@ def fourier_cos(f, dx, k=None):
     2*\int_{0}^{xmax}
     where xmax = 2n*dx
 
+    If k is not provided, linspace(0.0, 2*pi/dx, f.shape[axis]),
+    will be used.
     """
 
     if k is None:
-        k = linspace(0.0, 2*pi/dx, f.shape[0])
+        k = linspace(0.0, 2*pi/dx, f.shape[axis])
 
-    return k, 2*cos_integral(f, dx, k, x0=0.0)
+    return k, 2*cos_integral(f, dx, k, x0=0.0, axis=axis)
 
 
-def cos_integral(f, dx, k, x0=0.0):
+def cos_integral(f, dx, k, x0=0.0, axis=0):
     """\int_{x0}^{2n*dx} f(x)*cos(k x) dx
 
-    f must have length 2n+1.
+    f must have length 2n+1 along the integration axis.
     """
-    return _gen_sc_int(f, dx, k, x0, cos)
+    return _gen_sc_int(f, dx, k, x0, axis, cos)
 
-def sin_integral(f, dx, k, x0=0.0):
+def sin_integral(f, dx, k, x0=0.0, axis=0):
     """\int_{x0}^{2n*dx} f(x)*sin(k x) dx
 
-    f must have length 2n+1.
+    f must have length 2n+1 along the integration axis.
     """
-    return _gen_sc_int(f, dx, k, x0, sin)
+    return _gen_sc_int(f, dx, k, x0, axis, sin)
 
-
-def _gen_sc_int(f, dx, k, x0, sc):
+def _gen_sc_int(f, dx, k, x0, axis, sc):
 
     f = require(f)
     k = require(k)
 
-    f_original_shape = f.shape
+    try:
+        axis = range(f.ndim)[axis]
+    except (IndexError, TypeError):
+        print('Error: axis(=%s) is invalid' % str(axis))
+        raise
 
-    if len(f.shape) == 1:
-        f = f.reshape(f.shape+(1,1))
-    elif len(f.shape) == 2:
-        f = f.reshape(f.shape+(1,))
-    else:
-        raise RuntimeError('that many dimensions on f are currently not supported')
-
-    if len(k.shape) != 1:
-        raise RuntimeError('k should be one dimensional')
+    if k.ndim != 1:
+        raise ValueError('k is not one dimensional')
 
     Nk = len(k)
-    N = f_original_shape[0]
+    Nx = f.shape[axis]
+    x_shape = [1]*f.ndim + [Nx] # We'll transpose axis and put it last
+    k_shape = [1]*(f.ndim+1)    #
+    k_shape[axis] = Nk          #
 
-    Nmax = N-1
-    if mod(Nmax, 2) != 0 or N < 3:
-        raise RuntimeError('f should have an odd length (>2) along its first axis')
+    if mod((Nx-1), 2) != 0 or Nx < 3:
+        raise ValueError('f must have an odd length, >=3, along its integration axis')
 
-    # Split into even (E) and odd (O) indexed parts
-    fE = f[0::2,:,:]
-    fO = f[1::2,:,:]
+    s = (slice(None),)*f.ndim
+    odd_index =   s + (slice(1,None,2),)
+    even_index =  s + (slice(0,None,2),)
+    first_index = s + ((0,),)
+    last_index =  s + ((-1,),)
 
-    # axis=3 spans the reciprocal (k) dimension
-    k = k.reshape((1,1,Nk))
-    x = (x0+dx*arange(0.0, N)).reshape((N,1,1))
+    alpha, beta, gamma = [x.reshape(k_shape[:-1]) for x in _alpha_beta_gamma(dx*k)]
+    x = (x0+dx*arange(0.0, Nx)).reshape(x_shape)
+    k = k.reshape(k_shape)
 
-    alpha, beta, gamma = _alpha_beta_gamma(dx*k)
+    # Add an extra dimension to f, and transpose it to put the x-dimension at axis=-1
+    t = range(f.ndim+1)
+    t[axis], t[-1] = t[-1], t[axis]
+    f = f.reshape(f.shape+(1,)).transpose(t)
 
     sc_k_x = sc(k*x)
-
-    sc_k_x[0,:,:] *= 0.5
-    sc_k_x[Nmax,:,:] *= 0.5
-    sc_k_xE = sc_k_x[0::2,:,:]
-    sc_k_xO = sc_k_x[1::2,:,:]
+    sc_k_x[first_index] *= 0.5
+    sc_k_x[last_index] *= 0.5
 
     if sc == sin:
-        F = dx*(alpha*(f[0,:,:]*cos(k*x0) - f[Nmax,:,:]*cos(k*x[Nmax,0,0])) +
-                beta*sum(fE*sc_k_xE, axis=0) + gamma*sum(fO*sc_k_xO, axis=0))
-    elif sc == cos:
-        F = dx*(alpha*(f[Nmax,:,:]*sin(k*x[Nmax,:,:]) - f[0,:,:]*sin(k*x0)) +
-                beta*sum(fE*sc_k_xE, axis=0) + gamma*sum(fO*sc_k_xO, axis=0))
-    else:
-        raise RuntimeError('Internal error, this should not happen')
+        return dx*(alpha*sum((f[first_index]*cos(k*x0) -
+                              f[last_index]*cos(k*x[last_index])), axis=-1) +
+                   beta*sum(f[even_index]*sc_k_x[even_index], axis=-1) +
+                   gamma*sum(f[odd_index]*sc_k_x[odd_index], axis=-1))
 
-    F = F.transpose(2,1,0).reshape((Nk,) + f_original_shape[1:])
-    return F
+    elif sc == cos:
+        return dx*(alpha*sum((f[last_index]*sin(k*x[last_index]) -
+                              f[first_index]*sin(k*x0)), axis=-1) +
+                   beta*sum(f[even_index]*sc_k_x[even_index], axis=-1) +
+                   gamma*sum(f[odd_index]*sc_k_x[odd_index], axis=-1))
+
+    raise RuntimeError('Internal error, this should not happen')
+
 
 
 def _alpha_beta_gamma(theta):
     # From theta, calculate alpha, beta, and gamma
-    # theta is expected to have shape (1,1,N)
 
-    N = theta.size
-    alpha = zeros((1,1,N))
-    beta = zeros((1,1,N))
-    gamma = zeros((1,1,N))
+    N = len(theta)
+    alpha = zeros(N)
+    beta = zeros(N)
+    gamma = zeros(N)
 
     # theta==0 needs special treatment
-    I_nz = theta.nonzero()[2]
-    I_z = where(theta==0.0)[2]
-    if I_z.size > 0:
-        beta[:,:,I_z] = 2.0/3.0
-        gamma[:,:,I_z] = 4.0/3.0
-        theta = theta[:,:,I_nz]
+    I_nz, = theta.nonzero()
+    I_z, = where(theta==0.0)
+    if len(I_z) > 0:
+        beta[I_z] = 2.0/3.0
+        gamma[I_z] = 4.0/3.0
+        theta = theta[I_nz]
 
     sin_t = sin(theta)
     cos_t = cos(theta)
@@ -160,8 +167,9 @@ def _alpha_beta_gamma(theta):
     theta2 = theta*theta
     itheta3 = 1.0/(theta2*theta)
 
-    alpha[:,:,I_nz] = itheta3*(theta2 + theta*sin_t*cos_t - 2*sin2_t)
-    beta[:,:,I_nz] = 2*itheta3*(theta*(1+cos2_t) - 2*sin_t*cos_t)
-    gamma[:,:,I_nz] = 4*itheta3*(sin_t - theta*cos_t)
+    alpha[I_nz] = itheta3*(theta2 + theta*sin_t*cos_t - 2*sin2_t)
+    beta[I_nz] = 2*itheta3*(theta*(1+cos2_t) - 2*sin_t*cos_t)
+    gamma[I_nz] = 4*itheta3*(sin_t - theta*cos_t)
 
-    return alpha, beta, gamma
+    return (alpha, beta, gamma)
+
