@@ -406,9 +406,8 @@ if __name__ == '__main__':
     def F_to_G(F, pair_index):
         _,i,j = pair_list[pair_index]
         f = 1 / (r*2*pi**2 * particle_densities[j])
-        kF_ = np.transpose(k_*interp1d(k, F - 1)(k_))
-        return f*np.transpose(
-            filon.sin_integral(kF_, k_[1]-k_[0], r, k_[0])) + 1
+        kF_ = k_*interp1d(k, F - 1)(k_)
+        return f*filon.sin_integral(kF_, k_[1]-k_[0], r, k_[0], axis=1) + 1
     G_r_t = [F_to_G(F, i) for i, F in enumerate(F_k_t)]
 
     output += [(r, 'r', 'r-values for calculated G(r,t) [nm]')]
