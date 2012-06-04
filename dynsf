@@ -77,6 +77,8 @@ two_pi = 2.0 * pi
 if __name__ == '__main__':
 
     parser = optparse.OptionParser()
+
+
     iogroup = optparse.OptionGroup(parser,
                                    'Input/output options',
                                    'Options controlling input and output, '
@@ -157,30 +159,36 @@ if __name__ == '__main__':
 
 
     tgroup = optparse.OptionGroup(parser, 'Time-related options',
-                                  'Options controlling timestep, length of time '
-                                  'window, etc.')
+                                  'Options controlling timestep, '
+                                  'length and shape of trjectory frame window, etc.')
     tgroup.add_option('','--nt', metavar='TIME_CORR_STEPS', type='int',
                       help='Determines the length of the trajectory frame window '
                       'to use for time correlation calculation. '
                       'TIME_CORR_STEPS is expressed in "number of frames" and '
-                      'also determines the smallest frequency resolved. '
+                      'e.g. determines the smallest frequency resolved. '
                       'If no TIME_CORR_STEPS is provided, only static (t=0) '
                       'correlations will be calculated')
     tgroup.add_option('','--max-frames', metavar='FRAMES', type='int',
-                      default=0,
+                      default=100,
                       help='Limits the total number of trajectory frames read '
                       'to FRAMES. '
-                      'Default value is 0 (meaning no limit).')
+                      'The default value is set to 100.')
     tgroup.add_option('','--step', metavar='STEP', type='int', default=1,
                       help='Only use every (STEP)th trajectory frame. '
-                      'Default STEP is 1, meaning every frame. '
+                      'Default STEP is 1, meaning every frame is processed. '
                       'STEP affects dt and hence the smallest time resolved.')
     tgroup.add_option('','--stride', metavar='STRIDE', type='int', default=1,
                       help='Stride STRIDE frames between consecutive trajectory '
                       'windows. This does not affect dt. '
                       'If e.g. STRIDE > TIME_CORR_STEPS, some frames will '
                       'be completely unused.')
+    tgroup.add_option('', '--dt', metavar='DELTATIME',
+                      help='Explicitly sets the time difference between two '
+                      'consecutively processed trajectory frames to DELTATIME (femtoseconds). '
+                      'Useful when no time step information can be extracted from '
+                      'the trajectory file (e.g. when using molfileplugin).')
     parser.add_option_group(tgroup)
+
 
     parser.add_option('', '--threads', type='int', default=0,
                       help='Number of threads to use. '
@@ -244,8 +252,17 @@ if __name__ == '__main__':
         sys.exit(1)
 
     delta_t = f1['time'] - f0['time']
-    if delta_t == 0.0:
-        logger.warn('Delta time is 0.0!')
+
+    if options.dt:
+        try:
+            delta_t = float(options.dt)
+        except ValueError:
+            logger.error('Could not parse provided dt (%s) as float!' % options.dt)
+            sys.exit(1)
+        logger.warn('-- Explicitly setting delta time to %f fs.' % delta_t)
+
+    elif delta_t == 0.0:
+        logger.warn("Delta time is 0.0 (meaning, can't read info from trajectory)!")
         logger.warn('-- Defaulting to 1 fs [this will affect the output scale]')
         delta_t = 1
 
