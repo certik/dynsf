@@ -11,7 +11,7 @@ local_linker = local_compiler
 # Example: Explicitly use gcc
 #
 local_compiler = 'gcc'
-extra_compile_args = ['-fPIC', '-fopenmp', '-O3', '-march=nativ', '-std=c99']
+extra_compile_args = ['-fPIC', '-fopenmp', '-Ofast', '-march=native', '-std=c99']
 
 local_linker = local_compiler
 local_link_shared = ['-shared']

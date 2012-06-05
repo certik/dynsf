@@ -95,6 +95,9 @@ class reciprocal_processor:
                                for x in frame['xs']]
         return frame
 
+    def process_specific_xs(self, xs):
+        return [calc_rho_k(x, self.k_points, ftype=self.ftype) for x in xs]
+
 
 def get_prune_distance(max_points, max_q, q_vol):
     """Return the prune distance for q/k-points in the isotropic case

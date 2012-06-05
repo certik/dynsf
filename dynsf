@@ -190,6 +190,10 @@ if __name__ == '__main__':
     parser.add_option_group(tgroup)
 
 
+    options = optparse.OptionGroup(parser, 'General processing options')
+    options.add_option('','--calculate-self', action='store_true', default=False,
+                       help='Calculate the self-part, F_s, ...')
+
     parser.add_option('', '--threads', type='int', default=0,
                       help='Number of threads to use. '
                       'The default value is taken from OMP_NUM_THREADS if it is set, '
@@ -284,6 +288,13 @@ if __name__ == '__main__':
     else:
         calculate_current = False
 
+    i_N_particle_categories = [(i,x.shape[1]) for i,x in enumerate(f0['xs'])]
+
+    if options.calculate_self:
+        calculate_self = True
+    else:
+        calculate_self = False
+
     a,b,c = reference_box = f0['box']
     reference_volume = abs(np.dot(np.cross(a,b),c))
     particle_types = f0['types']
@@ -354,27 +365,28 @@ if __name__ == '__main__':
     if calculate_current:
         Cl_k_t_avs = [averager(N_tc, z) for _ in pair_list]
         Ct_k_t_avs = [averager(N_tc, z) for _ in pair_list]
+    if calculate_self:
+        F_s_k_t_avs = [averager(N_tc, z) for _ in i_N_particle_categories]
 
 
-    if calculate_current:
-        def calc_corr(window, time_i):
-            f0 = window[0]
-            fi = window[time_i]
+    def calc_corr(window, time_i):
+        f0 = window[0]
+        fi = window[time_i]
+        for m, i, j in pair_list:
+            F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] * fi['rho_ks'][j].conjugate())
+
+        if calculate_current:
             for m, i, j in pair_list:
-                F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] *
-                                                fi['rho_ks'][j].conjugate())
-                Cl_k_t_avs[m][time_i] += np.real(f0['jz_ks'][i] *
-                                                 fi['jz_ks'][j].conjugate())
+                Cl_k_t_avs[m][time_i] += np.real(f0['jz_ks'][i] * fi['jz_ks'][j].conjugate())
                 Ct_k_t_avs[m][time_i] += 0.5 * \
-                    np.real(np.sum(f0['jpar_ks'][i] *
-                                   fi['jpar_ks'][j].conjugate(), axis=0))
-    else:
-        def calc_corr(window, time_i):
-            f0 = window[0]
-            fi = window[time_i]
-            for m, i, j in pair_list:
-                F_k_t_avs[m][time_i] += np.real(f0['rho_ks'][i] *
-                                                fi['rho_ks'][j].conjugate())
+                    np.real(np.sum(f0['jpar_ks'][i] * fi['jpar_ks'][j].conjugate(), axis=0))
+
+        if calculate_self:
+            for i,F_s in enumerate(
+                rec.process_specific_xs(
+                    [(xi-x0) for xi,x0 in zip(fi['xs'], f0['xs'])])):
+                F_s_k_t_avs[i][time_i] += np.real(F_s)
+
 
     # This is the "main loop"
     for window in itraj_window:
@@ -388,15 +400,16 @@ if __name__ == '__main__':
     k_bins = fixed_bin_averager(rec.max_k, options.k_bins, rec.k_distance)
     k_bin_averager = curry(k_bins.bin, axis=1)
 
-    F_k_t_full = [F.get_av() for F in F_k_t_avs]
-    F_k_t = map(k_bin_averager, F_k_t_full)
+    F_k_t = map(k_bin_averager, [F.get_av() for F in F_k_t_avs])
 
     if calculate_current:
-        Cl_k_t_full = [C.get_av() for C in Cl_k_t_avs]
-        Ct_k_t_full = [C.get_av() for C in Ct_k_t_avs]
-        Cl_k_t = map(k_bin_averager, Cl_k_t_full)
-        Ct_k_t = map(k_bin_averager, Ct_k_t_full)
+        Cl_k_t = map(k_bin_averager, [C.get_av() for C in Cl_k_t_avs])
+        Ct_k_t = map(k_bin_averager, [C.get_av() for C in Ct_k_t_avs])
 
+    if calculate_self:
+        F_s_k_t = map(k_bin_averager, [C.get_av() for C in F_s_k_t_avs])
+        for i,N in i_N_particle_categories:
+            F_s_k_t[i] *= (1.0/np.sqrt(N))
 
     t = delta_t * np.arange(N_tc)
     k = k_bins.x.copy()
@@ -409,6 +422,19 @@ if __name__ == '__main__':
     output += [(F_k_t[m], 'F_k_t_%i_%i' % (i,j),
                 'Partial intermediate scattering function [time, k] (%s)' % pair_types[m])
                for m,i,j in pair_list]
+
+    if calculate_current:
+        output += [(Cl_k_t[m], 'Cl_k_t_%i_%i' % (i,j),
+                    'Longitudinal current correlation [time, k] (%s)' % pair_types[m])
+                   for m,i,j in pair_list]
+        output += [(Ct_k_t[m], 'Ct_k_t_%i_%i' % (i,j),
+                    'Transversal current correlation [time, k] (%s)' % pair_types[m])
+                   for m,i,j in pair_list]
+
+    if calculate_self:
+        output += [(F_s_k_t[i], 'F_s_k_t_%i' % i,
+                    'Self part of intermediate scattring function [time, k]')
+                   for i,_ in i_N_particle_categories]
 
 
     # Create an odd number of linearly spaced k-points, ranging from
@@ -436,11 +462,26 @@ if __name__ == '__main__':
     if len(t) > 2:
         w, S_k_w = zip(*[filon.fourier_cos(F, delta_t) for F in F_k_t])
         w = w[0]
-
         output += [(w, 'w', 'omega [fs^-1]')]
         output += [(S_k_w[m], 'S_k_w_%i_%i' % (i,j),
                     'Partial dynamical structure factor [omega, k] (%s)' % pair_types[m])
                    for m,i,j in pair_list]
+
+        if calculate_current:
+            _, Cl_k_w = zip(*[filon.fourier_cos(C, delta_t) for C in Cl_k_t])
+            _, Ct_k_w = zip(*[filon.fourier_cos(C, delta_t) for C in Ct_k_t])
+            output += [(Cl_k_w[m], 'Cl_k_w_%i_%i' % (i,j),
+                        'Longitudinal partial current correlation [omega, k] (%s)' % pair_types[m])
+                       for m,i,j in pair_list]
+            output += [(Ct_k_w[m], 'Ct_k_w_%i_%i' % (i,j),
+                        'Transversal partial current correlation [omega, k] (%s)' % pair_types[m])
+                       for m,i,j in pair_list]
+
+        if calculate_self:
+            _, S_s_k_w = zip(*[filon.fourier_cos(F, delta_t) for F in F_s_k_t])
+            output += [(S_s_k_w[i], 'S_s_k_w_%i' % i,
+                        'Self part of partial dynamical structure factor [omega, k]')
+                       for i,_ in i_N_particle_categories]
 
 
     for fn, writer in ((options.om, create_mfile),
