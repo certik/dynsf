@@ -193,6 +193,7 @@ if __name__ == '__main__':
     options = optparse.OptionGroup(parser, 'General processing options')
     options.add_option('','--calculate-self', action='store_true', default=False,
                        help='Calculate the self-part, F_s, ...')
+    parser.add_option_group(options)
 
     parser.add_option('', '--threads', type='int', default=0,
                       help='Number of threads to use. '
