@@ -604,7 +604,8 @@ class molfile_reader:
         return self
 
     def next(self):
-        assert self._mfp.plugin.read_next_timestep
+        if not self._mfp.plugin.read_next_timestep:
+            raise StopIteration
 
         N = self._N.value
         ts = self._ts
