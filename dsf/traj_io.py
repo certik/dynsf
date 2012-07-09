@@ -170,8 +170,8 @@ class iwindow:
 
 
 
-lname = find_library('gmx')
-libgmx = lname and cdll.LoadLibrary(lname)
+libgmx_name = find_library('gmx')
+libgmx = libgmx_name and cdll.LoadLibrary(libgmx_name)
 np_ndp = np.ctypeslib.ndpointer
 if libgmx:
     # single prec gmx-real equals float, right?

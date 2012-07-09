@@ -35,14 +35,15 @@ except ImportError:
 
 from itertools import islice
 
-from ctypes import cdll, CDLL, RTLD_GLOBAL, \
-    POINTER as PTR, CFUNCTYPE as CFT, \
-    Structure, cast, pointer, byref, \
-    c_int, c_uint, c_float, c_double, c_char, c_char_p, c_void_p
+from ctypes import (
+    cdll, CDLL, RTLD_GLOBAL,
+    POINTER as PTR, CFUNCTYPE as CFT,
+    Structure, cast, pointer, byref,
+    c_int, c_uint, c_float, c_double, c_char, c_char_p, c_void_p)
 from ctypes.util import find_library
 
-# Maybe a bit ugly. Is there a more kosher way of making sure
-# that the libstdc++ symbols are available to the molfile-plugins?
+# Maybe a bit ugly. Is there a more kosher way of making sure that the
+# libstdc++ (or similar) symbols are available to the molfile-plugins?
 _cxx = CDLL(find_library('stdc++'), mode=RTLD_GLOBAL)
 
 c_int_p = PTR(c_int)
@@ -75,22 +76,22 @@ c_float_pp = PTR(c_float_p)
 
 TRAJECTORY_PLUGIN_MAPPING = (
     #(SOFTWARE-NAME, FILE-TYPE, FILE-SUFFIX, PLUGIN-NAME)
-    ('AMBER',   '"binpos"',       'binpos',   'binposplugin'),
-    ('AMBER',   '"CRD"',          'crd',      'crdplugin'),
-    ('AMBER',   'NetCDF',         'nc',       'netcdfplugin'),
-    ('CHARMM',  '"DCD" - CHARMM, NAMD, XPLOR',
-                                  'dcd',      'dcdplugin'),
-    ('CPMD',    'CPMD',           'cpmd',     'cpmdplugin'),
-    ('DLPOLY',  'DLPOLY History', 'dlpolyhist','dlpolyplugin'),
-    ('GROMACS', 'Gromacs XTC',    'xtc',      'gromacsplugin'),
-    ('GROMACS', 'Gromacs TRR',    'trr',      'gromacsplugin'),
-    ('LAMMPS',  'LAMMPS Trajectory','lammpstrj','lammpsplugin'),
-    ('VASP',    'VASP ionic steps','xml',     'vaspxmlplugin'),
-    ('VASP',    'VASP ionic steps','OUTCAR',  'vaspoutcarplugin'),
-    ('VTF',     'VTF trajectory',  'vtf',     'vtfplugin'),
-    ('XCrySDen','XSF trajectory',  'xsf',     'xsfplugin'),
-    ('XCrySDen','AXSF trajectory', 'axsf',    'xsfplugin'),
-    ('?',       'XYZ trajectory',  'xyz',     'xyzplugin'))
+    ('AMBER',    '"binpos"',          'binpos',    'binposplugin'),
+    ('AMBER',    '"CRD"',             'crd',       'crdplugin'),
+    ('AMBER',    'NetCDF',            'nc',        'netcdfplugin'),
+    ('CHARMM',   '"DCD" - CHARMM, NAMD, XPLOR',
+                                      'dcd',       'dcdplugin'),
+    ('CPMD',     'CPMD',              'cpmd',      'cpmdplugin'),
+    ('DLPOLY',   'DLPOLY History',    'dlpolyhist','dlpolyplugin'),
+    ('GROMACS',  'Gromacs XTC',       'xtc',       'gromacsplugin'),
+    ('GROMACS',  'Gromacs TRR',       'trr',       'gromacsplugin'),
+    ('LAMMPS',   'LAMMPS Trajectory', 'lammpstrj', 'lammpsplugin'),
+    ('VASP',     'VASP ionic steps',  'xml',       'vaspxmlplugin'),
+    ('VASP',     'VASP ionic steps',  'OUTCAR',    'vaspoutcarplugin'),
+    ('VTF',      'VTF trajectory',    'vtf',       'vtfplugin'),
+    ('XCrySDen', 'XSF trajectory',    'xsf',       'xsfplugin'),
+    ('XCrySDen', 'AXSF trajectory',   'axsf',      'xsfplugin'),
+    ('?',        'XYZ trajectory',    'xyz',       'xyzplugin'))
 
 
 
@@ -101,12 +102,12 @@ def find_molfile_plugin_dir():
 
     vmddir = None
     system,_,_,_,machine,_ = uname()
-    rel_path = 'plugins/%s/molfile' % \
-        {('Linux', 'x86_64') : 'LINUXAMD64',
-         ('Linux', 'i386') : 'LINUX',
-         #('Darwin', 'x86_64') : 'MACOSXX86',
-         ('Darwin', 'i386') : 'MACOSXX86'}.get((system, machine),
-                                               'UNKNOWN')
+    rel_path = 'plugins/%s/molfile' % {
+        ('Linux', 'x86_64') : 'LINUXAMD64',
+        ('Linux', 'i386') : 'LINUX',
+        #('Darwin', 'x86_64') : 'MACOSXX86',
+        ('Darwin', 'i386') : 'MACOSXX86'
+        }.get((system, machine), 'UNKNOWN')
 
     if 'VMDDIR' in os.environ:
         vmddir = os.environ['VMDDIR']
