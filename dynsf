@@ -28,11 +28,13 @@ import logging
 import numpy as np
 
 from itertools import count, islice
+from functools import partial
 
-from dsf.output import *
-from dsf.traj_io import get_itraj, iwindow, curry
-from dsf.reciprocal import reciprocal_isotropic, reciprocal_line
 import dsf.filon as filon
+from dsf.output import *
+from dsf.index import section_index
+from dsf.trajectory import get_itraj, iwindow
+from dsf.reciprocal import reciprocal_isotropic, reciprocal_line
 from dsf.binner import fixed_bin_averager
 
 from dsf.handythread import foreach
@@ -89,7 +91,7 @@ if __name__ == '__main__':
                        'Supported formats depends on VMD\'s molfile plugin '
                        'or gmxlib. As a fallback, a lammps-trajectory parser '
                        'implemented in Python is also available.')
-    iogroup.add_option('-n', '', metavar='INDEX_FILE',
+    iogroup.add_option('-n', '--index', metavar='INDEX_FILE',
                        help='Optional index file (think Gromacs INI-style) for '
                        'specifying atom types. Atoms are indexed from 1 up to N '
                        '(total number of atoms). '
@@ -244,12 +246,11 @@ if __name__ == '__main__':
     # Affects rho_j_k
     os.environ['OMP_NUM_THREADS'] = str(num_threads)
 
+
     # Read the two first frames to set up references values
     # box size, number of different particles, time step length, etc
     try:
-        f0, f1 = islice(get_itraj(options.trajectory,
-                                  index_file=options.n,
-                                  step=options.step),
+        f0, f1 = islice(get_itraj(options.trajectory, step=options.step),
                         2)
     except ValueError:
         logger.error('Failed to read two consecutive frames to determine '
@@ -284,10 +285,16 @@ if __name__ == '__main__':
         logger.info('-- delta_omega, max_omega = %f, %f [fs^-1]' % \
                         (dw, dw*options.nt))
 
-    if 'vs' in f0:
+    if 'v' in f0:
         calculate_current = True
     else:
         calculate_current = False
+
+    index = section_index(options.index)
+    if not index.valid_index_limits(f0['N']):
+        logger.error('Index file seems to contain one or more invalid indices. '
+                     'For provided trajectory file, indes must be in range [1, %i]' % f0['N'])
+        sys.exit(1)
 
     i_N_particle_categories = [(i,x.shape[1]) for i,x in enumerate(f0['xs'])]
 
@@ -393,13 +400,13 @@ if __name__ == '__main__':
     for window in itraj_window:
         logger.debug("processing window step %i to %i" % (window[0]['step'],
                                                           window[-1]['step']))
-        foreach(curry(calc_corr, window), xrange(len(window)), threads=num_threads)
+        foreach(partial(calc_corr, window), xrange(len(window)), threads=num_threads)
 
 
     # Extract correlation (all k-point) averages
     # and calculate average per 'radial' bin
     k_bins = fixed_bin_averager(rec.max_k, options.k_bins, rec.k_distance)
-    k_bin_averager = curry(k_bins.bin, axis=1)
+    k_bin_averager = partial(k_bins.bin, axis=1)
 
     F_k_t = map(k_bin_averager, [F.get_av() for F in F_k_t_avs])
 

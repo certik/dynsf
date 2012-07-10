@@ -22,13 +22,13 @@ import np
 section_re = re.compile(r'^ *\[ *([a-zA-Z0-9_.-]+) *\] *$')
 
 class section_index:
-    def __init__(self, filename=None):
-        """Read an ini-style gromacs index file
+    """Read an ini-style gromacs index file
 
-        Reads and parses named index file, keep a list
-        of name-array-tuples, containing
-        name and indices of the specified (non-empty) sections.
-        """
+    Reads and parses named index file, keep a list
+    of name-array-tuples, containing
+    name and indices of the specified (non-empty) sections.
+    """
+    def __init__(self, filename=None):
         sections = []
         members = []
         name = None
@@ -65,7 +65,16 @@ class section_index:
         Split x/v into list of xs/vs in accordance with specified sections.
         """
         if self.sections == []:
-            return lambda x:[x]
+            def split(frame):
+                frame['xs'] = [frame['x']]
+                if 'v' in frame:
+                    frame['vs'] = [frame['v']]
+                return frame
         else:
             indices = [I for _,I in self.sections]
-            return lambda x:[x[:,I] for I in indices]
+            def split(frame):
+                frame['xs'] = [frame['x'][:,I] for I in indices]
+                if 'v' in frame:
+                    frame['vs'] = [frame['v'][:,I] for I indices]
+                return frame
+        return split
