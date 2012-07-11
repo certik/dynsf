@@ -37,7 +37,7 @@ class fixed_bin_averager:
         assert x_bins > 1
 
         self.delta_x = (x_max-x_min) / (x_bins-1)
-        x_range = (-self.delta_x/2, x_max+self.delta_x/2)
+        x_range = (x_min-self.delta_x/2, x_max+self.delta_x/2)
         bin_count, edges = np.histogram(x_distances,
                                         bins=x_bins,
                                         range=x_range)
