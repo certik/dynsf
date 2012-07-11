@@ -58,7 +58,7 @@ class abstract_trajectory_reader:
 
         E.g. are necessary 3rd party libraries available?
         """
-        raise NotImplementedError:
+        raise NotImplementedError
 
     def __iter__(self):
         return self
@@ -66,17 +66,17 @@ class abstract_trajectory_reader:
     def next(self):
         """Get next trajectory frame
         """
-        raise NotImplementedError:
+        raise NotImplementedError
 
     def close(self):
         """Close files, be done
         """
-        raise NotImplementedError:
+        raise NotImplementedError
 
 #
 # L I B G M X
 #
-# libgmx comes with Gromacs and contain, among other things,
+# libgmx comes with Gromacs and contains, among other things,
 # functionality for reading xtc-files.
 #
 
@@ -130,7 +130,7 @@ class XTC_reader(abstract_trajectory_reader):
 
     def __init__(self, filename):
         if libgmx is None:
-            raise RuntimeError("No libgmx found, can't use XTC_reader!")
+            raise RuntimeError("XTC_reader: No libgmx found, can't use XTC_reader!")
 
         self._fio = libgmx.open_xtc(filename, 'rb')
         if not self._fio:
@@ -198,7 +198,7 @@ class XTC_reader(abstract_trajectory_reader):
            self._get_first()
 
         return dict(
-            index = self._index.next()
+            index = self._index.next(),
             box = self._box.copy('F'),
             time = self._time.value,
             N = self._natoms.value,

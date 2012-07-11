@@ -290,13 +290,8 @@ if __name__ == '__main__':
     else:
         calculate_current = False
 
-    index = section_index(options.index)
-    if not index.valid_index_limits(f0['N']):
-        logger.error('Index file seems to contain one or more invalid indices. '
-                     'For provided trajectory file, indes must be in range [1, %i]' % f0['N'])
-        sys.exit(1)
-
-    i_N_particle_categories = [(i,x.shape[1]) for i,x in enumerate(f0['xs'])]
+    index = section_index(options.index, f0['N'])
+    i_N_particle_categories = [(i,len(ind)) for i,ind in enumerate(index.get_section_indices())]
 
     if options.calculate_self:
         calculate_self = True
@@ -305,8 +300,8 @@ if __name__ == '__main__':
 
     a,b,c = reference_box = f0['box']
     reference_volume = abs(np.dot(np.cross(a,b),c))
-    particle_types = f0['types']
-    particle_counts = [x.shape[1] for x in f0['xs']]
+    particle_types = index.get_section_names()
+    particle_counts = map(len, index.get_section_indices())
     particle_densities = [n/reference_volume for n in particle_counts]
 
     logger.info('Trajectory file: %s' % options.trajectory)
@@ -349,13 +344,16 @@ if __name__ == '__main__':
     assert options.stride > 0
     N_stride = options.stride
 
+    f2 = rec.get_frame_process_function()
+    f1 = index.get_section_split_function()
+    element_processor = lambda frame : f2(f1(frame))
+
     itraj_window = iwindow(get_itraj(options.trajectory,
-                                     index_file=options.n,
                                      step=options.step,
                                      max_frames=options.max_frames),
                            width=N_tc,
                            stride=options.stride,
-                           element_processor=rec.process_frame)
+                           element_processor=element_processor)
 
     # TODO....
     # * Assert box is not changed during consecutive frames
@@ -398,8 +396,8 @@ if __name__ == '__main__':
 
     # This is the "main loop"
     for window in itraj_window:
-        logger.debug("processing window step %i to %i" % (window[0]['step'],
-                                                          window[-1]['step']))
+        logger.debug("processing window step %i to %i" % (window[0]['index'],
+                                                          window[-1]['index']))
         foreach(partial(calc_corr, window), xrange(len(window)), threads=num_threads)
 
 

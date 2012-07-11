@@ -28,7 +28,7 @@ from collections import deque
 
 from trajectory_readers import *
 
-logger = logger.getLogger('dynsf')
+logger = logging.getLogger('dynsf')
 
 def get_itraj(filename, step=1, max_frames=0,
               readers=trajectory_readers):
@@ -63,18 +63,18 @@ def get_itraj(filename, step=1, max_frames=0,
         raise IOError('File "%s" does not exist' % filename)
 
     for reader in readers:
-        # Naively pick the first reader that seems to work
+        # Simply pick the first reader that seems to work
         if reader.reader_available():
-            reader_name = reader.__class__.__name__
+            reader_name = reader.__name__
             try:
                 logger.debug('Trying trajectory_reader %s' % reader_name)
                 i = reader(filename)
-                break
+                return islice(reader(filename), 0, max_frames, step)
             except Exception as e:
                 logger.debug('Trying trajectory_reader %s failed to open file %s' % (
                         reader_name, filename))
-            else:
-                return islice(reader(filename), 0, max_frames, step)
+
+    raise IOError("Failed to open trajectory file %s" % filename)
 
 
 def consume(iterator, n):
@@ -103,7 +103,7 @@ class iwindow:
     def __init__(self, itraj, width=2, stride=1, element_processor=None):
 
         self._raw_it = itraj
-        if element_processors:
+        if element_processor:
             self._it = imap(element_processor, self._raw_it)
         else:
             self._it = self._raw_it

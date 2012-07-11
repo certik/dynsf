@@ -17,7 +17,8 @@
 # 02110-1301, USA.
 
 import re
-import np
+import numpy as np
+from os.path import isfile
 
 section_re = re.compile(r'^ *\[ *([a-zA-Z0-9_.-]+) *\] *$')
 
@@ -28,24 +29,31 @@ class section_index:
     of name-array-tuples, containing
     name and indices of the specified (non-empty) sections.
     """
-    def __init__(self, filename=None):
-        sections = []
-        members = []
-        name = None
-        with open(filename, 'r') as f:
-            for L in f:
-                m = section_re.match(L)
-                if m:
-                    if members and name:
-                        sections.append((name, np.unique(np.concatenate(members))))
-                    name = m.group(1)
-                    members = []
-                elif not L.isspace():
-                    members.append(np.fromstring(L, dtype=int, sep=' '))
-        if members and name:
-            sections.append((name, np.unique(np.concatenate(members))))
+    def __init__(self, filename, max_index):
+
+        if filename is not None and isfile(filename):
+            sections = []
+            members = []
+            name = None
+            with open(filename, 'r') as f:
+                for L in f:
+                    m = section_re.match(L)
+                    if m:
+                        if members and name:
+                            sections.append((name, np.unique(np.concatenate(members))))
+                        name = m.group(1)
+                        members = []
+                    elif not L.isspace():
+                        members.append(np.fromstring(L, dtype=int, sep=' '))
+                if members and name:
+                    sections.append((name, np.unique(np.concatenate(members))))
+        else:
+            sections = [("all", np.arange(max_index, dtype=int))]
 
         self.sections = sections
+        if not self.valid_index_limits(max_index):
+            raise ValueError("section_index: Index file seems to contain one or more invalid indices. "
+                             "For the provided trajectory file, indices must be in range [1, %i]")
 
     def valid_index_limits(self, N):
         for _,I in self.sections:
@@ -54,27 +62,21 @@ class section_index:
         return True
 
     def get_section_names(self):
-        if self.sections == []:
-            return ["all"]
-        else:
-            return [n for n,_ in self.sections]
+        return [n for n,_ in self.sections]
+
+    def get_section_indices(self):
+        return [i for _,i in self.sections]
 
     def get_section_split_function(self):
         """Special function for splitting (3,N) dimensioned x or v arrays
 
         Split x/v into list of xs/vs in accordance with specified sections.
         """
-        if self.sections == []:
-            def split(frame):
-                frame['xs'] = [frame['x']]
-                if 'v' in frame:
-                    frame['vs'] = [frame['v']]
-                return frame
-        else:
-            indices = [I for _,I in self.sections]
-            def split(frame):
-                frame['xs'] = [frame['x'][:,I] for I in indices]
-                if 'v' in frame:
-                    frame['vs'] = [frame['v'][:,I] for I indices]
-                return frame
-        return split
+        indices = [I for _,I in self.sections]
+        def fun(frame):
+            frame = frame.copy()
+            frame['xs'] = [frame['x'][:,I] for I in indices]
+            if 'v' in frame:
+                frame['vs'] = [frame['v'][:,I] for I in indices]
+            return frame
+        return fun

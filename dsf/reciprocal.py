@@ -78,22 +78,23 @@ def calc_rho_j_k(x, v, k, ftype='d'):
 
 class reciprocal_processor:
 
-    def process_frame(self, frame):
-        logger.debug("processing frame step %i" % frame['step'])
-        frame = frame.copy()
-        if 'vs' in frame:
-            rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,
-                                              ftype=self.ftype)
-                                 for x,v in zip(frame['xs'],frame['vs'])])
-            jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
-            frame['j_ks'] = j_ks
-            frame['jz_ks'] = jz_ks
-            frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
-            frame['rho_ks'] = rho_ks
-        else:
-            frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
-                               for x in frame['xs']]
-        return frame
+    def get_frame_process_function(self):
+        def fun(frame):
+            frame = frame.copy()
+            if 'vs' in frame:
+                rho_ks, j_ks = zip(*[calc_rho_j_k(x, v, self.k_points,
+                                                  ftype=self.ftype)
+                                     for x,v in zip(frame['xs'],frame['vs'])])
+                jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
+                frame['j_ks'] = j_ks
+                frame['jz_ks'] = jz_ks
+                frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
+                frame['rho_ks'] = rho_ks
+            else:
+                frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
+                                   for x in frame['xs']]
+            return frame
+        return fun
 
     def process_specific_xs(self, xs):
         return [calc_rho_k(x, self.k_points, ftype=self.ftype) for x in xs]
