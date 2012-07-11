@@ -67,6 +67,9 @@ class section_index:
     def get_section_indices(self):
         return [i for _,i in self.sections]
 
+    def N_sections(self):
+        return len(self.sections)
+
     def get_section_split_function(self):
         """Special function for splitting (3,N) dimensioned x or v arrays
 
