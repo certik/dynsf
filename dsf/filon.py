@@ -131,14 +131,14 @@ def _gen_sc_int(f, dx, k, x0, axis, sc):
     if sc == sin:
         return dx*(alpha * sum((f[first_index] * cos(k*x0) -
                                 f[last_index]  * cos(k*x[last_index])), axis=-1) +
-                   beta  * sum(f[even_index] * sc_k_x[even_index], axis=-1) +
-                   gamma * sum(f[odd_index]  * sc_k_x[odd_index], axis=-1))
+                   beta  * sum(f[even_index] * sc_k_x[even_index],      axis=-1) +
+                   gamma * sum(f[odd_index]  * sc_k_x[odd_index],       axis=-1))
 
     elif sc == cos:
-        return dx*(alpha * sum((f[last_index] * sin(k*x[last_index]) -
-                              f[first_index]  * sin(k*x0)), axis=-1) +
-                   beta  * sum(f[even_index] * sc_k_x[even_index], axis=-1) +
-                   gamma * sum(f[odd_index]  * sc_k_x[odd_index], axis=-1))
+        return dx*(alpha * sum((f[last_index]  * sin(k*x[last_index]) -
+                                f[first_index] * sin(k*x0)),         axis=-1) +
+                   beta  * sum(f[even_index] * sc_k_x[even_index],   axis=-1) +
+                   gamma * sum(f[odd_index]  * sc_k_x[odd_index],    axis=-1))
 
     raise RuntimeError('Internal error, this should not happen')
 
