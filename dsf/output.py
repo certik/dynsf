@@ -20,14 +20,20 @@ __all__ = ['create_mfile', 'create_pfile']
 
 import numpy as np
 import logging
+from itertools import repeat
 
 logger = logging.getLogger('dynsf')
 
-def create_mfile(filename, output):
+def create_mfile(filename, output, comment=None):
     with open(filename, 'w') as fh:
         popts = np.get_printoptions()
         np.set_printoptions(threshold='inf',
                             linewidth='inf')
+
+        if comment is not None:
+            fh.write('%%%\n')
+            fh.write(''.join(['% '+x+'\n' for x in comment.split('\n')]))
+            fh.write('%%%\n')
 
         for v, n, desc in output:
             fh.write("\n%% %s\n%s = ...\n%s;\n" % (desc, n, str(v)))
@@ -35,7 +41,7 @@ def create_mfile(filename, output):
         np.set_printoptions(**popts)
         logger.info('Wrote Matlab-style output to %s' % fh.name)
 
-def create_pfile(filename, output):
+def create_pfile(filename, output, comment=None):
     import cPickle
     with open(filename, 'w') as fh:
         cPickle.dump(output, fh)

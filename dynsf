@@ -491,6 +491,7 @@ if __name__ == '__main__':
                        for i,_ in i_N_particle_categories]
 
 
-    for fn, writer in ((options.om, create_mfile),
+    for fn, writer in ((options.om, partial(create_mfile,
+                                            comment=('Command line: ' + ' '.join(sys.argv)))),
                        (options.op, create_pfile)):
         fn and writer(fn, output)
