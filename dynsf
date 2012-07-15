@@ -490,8 +490,7 @@ if __name__ == '__main__':
                         'Self part of partial dynamical structure factor [omega, k]')
                        for i,_ in i_N_particle_categories]
 
-
-    for fn, writer in ((options.om, partial(create_mfile,
-                                            comment=('Command line: ' + ' '.join(sys.argv)))),
+    comment = 'Command line: ' + ' '.join(sys.argv)
+    for fn, writer in ((options.om, partial(create_mfile, comment=comment)),
                        (options.op, create_pfile)):
         fn and writer(fn, output)
