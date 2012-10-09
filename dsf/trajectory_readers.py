@@ -295,10 +295,16 @@ class TRJ_reader(abstract_trajectory_reader):
                     return False
             return True
 
+        self._x_map = None
         if _all_in_cols(('id','xu','yu','zu')):
             self._x_I = array(map(cols.index, ('xu','yu','zu')))
         elif _all_in_cols(('id','x','y','z')):
             self._x_I = array(map(cols.index, ('x','y','z')))
+        elif _all_in_cols(('id','xs','ys','zs')):
+            self._x_I = array(map(cols.index, ('xs','ys','zs')))
+            _x_factor = self._box.diagonal().reshape((3,1))
+            # xs.shape == (3,n)
+            self._x_map = lambda xs : xs * _x_factor
         else:
             raise RuntimeError('TRJ file must contain at least atom-id, x, y, '
                                'and z coordinates to be useful.')
@@ -320,7 +326,10 @@ class TRJ_reader(abstract_trajectory_reader):
         # Unless dump is done for group "all" ...
         I[np.argsort(I)] = arange(len(I))
         self._x = zeros((3,N), order='F')
-        self._x[:,I] = data[:,self._x_I].transpose()
+        if self._x_map is None:
+            self._x[:,I] = data[:,self._x_I].transpose()
+        else:
+            self._x[:,I] = self._x_map(data[:,self._x_I].transpose())
         if self._v_I is not None:
             self._v = zeros((3,N), order='F')
             self._v[:,I] = data[:,self._v_I].transpose()
@@ -339,7 +348,10 @@ class TRJ_reader(abstract_trajectory_reader):
         data = array([map(float, self._fh.readline().split())
                          for _ in range(N)])
         I = np.asarray(data[:,self._id_I], dtype=np.int)-1
-        self._x[:,I] = data[:,self._x_I].transpose()
+        if self._x_map is None:
+            self._x[:,I] = data[:,self._x_I].transpose()
+        else:
+            self._x[:,I] = self._x_map(data[:,self._x_I].transpose())
         if self._v_I is not None:
             self._v[:,I] = data[:,self._v_I].transpose()
 
