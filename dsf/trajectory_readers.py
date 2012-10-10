@@ -334,9 +334,6 @@ class TRJ_reader(abstract_trajectory_reader):
             self._v = zeros((3,N), order='F')
             self._v[:,I] = data[:,self._v_I].transpose()
 
-        self._setup_indexes()
-
-
     def _get_next(self):
         # get next frame, update state of self
         step, N, box, cols = self._read_frame_header()
