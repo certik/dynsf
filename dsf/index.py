@@ -46,14 +46,14 @@ class section_index:
                     elif not L.isspace():
                         members.append(np.fromstring(L, dtype=int, sep=' '))
                 if members and name:
-                    sections.append((name, np.unique(np.concatenate(members))))
+                    sections.append((name, np.unique(np.concatenate(members))-1))
         else:
             sections = [("all", np.arange(max_index, dtype=int))]
 
         self.sections = sections
         if not self.valid_index_limits(max_index):
             raise ValueError("section_index: Index file seems to contain one or more invalid indices. "
-                             "For the provided trajectory file, indices must be in range [1, %i]")
+                              "For the provided trajectory file, indices must be in range [1, %d]" % (max_index,))
 
     def valid_index_limits(self, N):
         for _,I in self.sections:
