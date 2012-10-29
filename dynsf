@@ -319,6 +319,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if style == 'line':
+        # Sample on points along a line in k-space
         if options.k_direction is None:
             logger.error('k-direction must be specified in line mode.')
             sys.exit(1)
@@ -334,8 +335,10 @@ if __name__ == '__main__':
                               k_direction=k_direction)
 
     elif style == 'isotropic':
+        # Sample k-space without preference to direction
         rec = reciprocal_isotropic(reference_box,
                                    max_points=options.max_k_points,
+
                                    max_k=options.k_max)
 
     logger.info('N kpoints = %i' % len(rec.k_distance))
@@ -345,10 +348,14 @@ if __name__ == '__main__':
     assert options.stride > 0
     N_stride = options.stride
 
+    # function to use to "calculate rho(k)"
     f2 = rec.get_frame_process_function()
+    # function to split particles into different index groups (types)
     f1 = index.get_section_split_function() # Prerequisite for f2
+    # apply this to each frame considered
     element_processor = lambda frame : f2(f1(frame))
 
+    # The trajectory window iterator
     itraj_window = iwindow(get_itraj(options.trajectory,
                                      step=options.step,
                                      max_frames=options.max_frames),
@@ -377,6 +384,7 @@ if __name__ == '__main__':
 
 
     def calc_corr(window, time_i):
+        # Calculate correlations between two frames in the window
         f0 = window[0]
         fi = window[time_i]
         for m, i, j in pair_list:
@@ -386,7 +394,7 @@ if __name__ == '__main__':
             for m, i, j in pair_list:
                 Cl_k_t_avs[m][time_i] += np.real(f0['jz_ks'][i] * fi['jz_ks'][j].conjugate())
                 Ct_k_t_avs[m][time_i] += 0.5 * \
-                    np.real(np.sum(f0['jpar_ks'][i] * fi['jpar_ks'][j].conjugate(), axis=0))
+                    np.real(np.sum(f0['jper_ks'][i] * fi['jper_ks'][j].conjugate(), axis=0))
 
         if calculate_self:
             for i,F_s in enumerate(
@@ -399,6 +407,7 @@ if __name__ == '__main__':
     for window in itraj_window:
         logger.debug("processing window step %i to %i" % (window[0]['index'],
                                                           window[-1]['index']))
+        # Have num_threads threads concurrently process the window
         foreach(partial(calc_corr, window), xrange(len(window)), threads=num_threads)
 
 

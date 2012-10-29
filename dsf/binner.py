@@ -22,7 +22,6 @@ import numpy as np
 import logging
 logger = logging.getLogger('dynsf')
 
-
 class fixed_bin_averager:
     """Class for averaging data sets of points (x,y) with
        a priori decided positions (x), over a pre-defined number
@@ -31,6 +30,8 @@ class fixed_bin_averager:
        This is used to get an average of y for a set of
        lineary spaced x values when a possibly large set
        of {y(x)} is given.
+
+       
     """
     def __init__(self, x_max, x_bins, x_distances, x_min=0.0):
         assert x_max > x_min

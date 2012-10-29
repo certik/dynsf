@@ -55,6 +55,13 @@ for t in "ds":
                                 ndp_c_1d_rw[t], ndp_c_2d_rw[t])
 
 def calc_rho_k(x, k, ftype='d'):
+    """Calculate rho(k) of particle coordinates x.
+
+    Will call external function rho_k to calculate the
+    particle density in k-space.
+    Particle coordinates and k-space points of interest are
+    passed as input via x and k, respectively.
+    """
     x = require(x, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
     k = require(k, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
     _, Nx = x.shape
@@ -64,6 +71,8 @@ def calc_rho_k(x, k, ftype='d'):
     return rho_k
 
 def calc_rho_j_k(x, v, k, ftype='d'):
+    """As calc_rho_k, but calculate also velocities in k-space
+    """
     assert x.shape == v.shape
     x = require(x, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
     v = require(v, np_f[ftype], ['F_CONTIGUOUS', 'ALIGNED'])
@@ -77,8 +86,16 @@ def calc_rho_j_k(x, v, k, ftype='d'):
 
 
 class reciprocal_processor:
-
+    """Used as a trajectory frame processing helper tool.
+    """
     def get_frame_process_function(self):
+        """Create a function to be used to process each trajectory frame.
+
+        Augment the frame (which is a dictionary) with k-space densities
+        for each particle group (e.g. atom type).
+        Depending on whether velocity data is available, calculate and
+        add also particle currents.
+        """
         def fun(frame):
             frame = frame.copy()
             if 'vs' in frame:
@@ -88,7 +105,7 @@ class reciprocal_processor:
                 jz_ks = [np.sum(j*self.k_direct, axis=0) for j in j_ks]
                 frame['j_ks'] = j_ks
                 frame['jz_ks'] = jz_ks
-                frame['jpar_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
+                frame['jper_ks'] = [j-(jz*self.k_direct) for j,jz in zip(j_ks, jz_ks)]
                 frame['rho_ks'] = rho_ks
             else:
                 frame['rho_ks'] = [calc_rho_k(x, self.k_points, ftype=self.ftype)
