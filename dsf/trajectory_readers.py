@@ -368,7 +368,6 @@ class TRJ_reader(abstract_trajectory_reader):
         else:
             self._get_first()
 
-        xs = [self.x_factor*self._x[:,I] for I in self.indexes]
         res = dict(
             index = self._index.next(),
             N = int(self._natoms),
@@ -508,7 +507,7 @@ class molfile_reader(abstract_trajectory_reader):
                    x = self._x*self.x_factor
                    )
         if self._v is not None:
-            res['v'] = self._v[:,I]*self.v_factor
+            res['v'] = self._v*self.v_factor
 
         return res
 

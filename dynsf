@@ -457,6 +457,7 @@ if __name__ == '__main__':
     # the "distance" of the smallest non-empty bin and up.
     k_ = k_bins.x_linspace
     k_ = k_[k_ >= k[1]]
+    k_ = k_[k_ <= k[-1]]
     if not len(k_) % 2:
         k_ = k_[:-1]
 
