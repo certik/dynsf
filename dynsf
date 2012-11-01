@@ -341,7 +341,10 @@ if __name__ == '__main__':
 
                                    max_k=options.k_max)
 
-    logger.info('N kpoints = %i' % len(rec.k_distance))
+    if len(rec.k_distance) > 1:
+        logger.info('N kpoints = %i' % len(rec.k_distance))
+    else:
+        logger.warning('N kpoints = %i' % len(rec.k_distance))
     logger.info('k_max = %f --> x_min = %f [nm]' % \
                     (rec.max_k, two_pi/rec.max_k))
 
@@ -453,27 +456,28 @@ if __name__ == '__main__':
                    for i in range(index.N_sections())]
 
 
-    # Create an odd number of linearly spaced k-points, ranging from
-    # the "distance" of the smallest non-empty bin and up.
-    k_ = k_bins.x_linspace
-    k_ = k_[k_ >= k[1]]
-    k_ = k_[k_ <= k[-1]]
-    if not len(k_) % 2:
-        k_ = k_[:-1]
+    if len(k) > 1:
+        # Create an odd number of linearly spaced k-points, ranging from
+        # the "distance" of the smallest non-empty bin and up.
+        k_ = k_bins.x_linspace
+        k_ = k_[k_ >= k[1]]
+        k_ = k_[k_ <= k[-1]]
+        if not len(k_) % 2:
+            k_ = k_[:-1]
 
-    dr = two_pi/k[-1]
-    r = np.arange(5*dr, pi/k[1], dr)
-    def F_to_G(F, pair_index):
-        _,i,j = pair_list[pair_index]
-        f = 1 / (r*2*pi**2 * particle_densities[j])
-        kF_ = k_*interp1d(k, F - 1)(k_)
-        return f*filon.sin_integral(kF_, k_[1]-k_[0], r, k_[0], axis=1) + 1
-    G_r_t = [F_to_G(F, i) for i, F in enumerate(F_k_t)]
+        dr = two_pi/k[-1]
+        r = np.arange(5*dr, pi/k[1], dr)
+        def F_to_G(F, pair_index):
+            _,i,j = pair_list[pair_index]
+            f = 1 / (r*2*pi**2 * particle_densities[j])
+            kF_ = k_*interp1d(k, F - 1)(k_)
+            return f*filon.sin_integral(kF_, k_[1]-k_[0], r, k_[0], axis=1) + 1
+        G_r_t = [F_to_G(F, i) for i, F in enumerate(F_k_t)]
 
-    output += [(r, 'r', 'r-values for calculated G(r,t) [nm]')]
-    output += [(G_r_t[m], 'G_r_t_%i_%i' % (i,j),
-                'Calculated partial van Hove function [time, r] (%s)' % pair_types[m])
-               for m,i,j in pair_list]
+        output += [(r, 'r', 'r-values for calculated G(r,t) [nm]')]
+        output += [(G_r_t[m], 'G_r_t_%i_%i' % (i,j),
+                    'Calculated partial van Hove function [time, r] (%s)' % pair_types[m])
+                   for m,i,j in pair_list]
 
 
     if len(t) > 2:
