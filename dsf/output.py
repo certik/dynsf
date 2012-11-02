@@ -25,6 +25,8 @@ from itertools import repeat
 logger = logging.getLogger('dynsf')
 
 def create_mfile(filename, output, comment=None):
+    """Create matlab style m-file.
+    """
     with open(filename, 'w') as fh:
         popts = np.get_printoptions()
         np.set_printoptions(threshold='inf',
@@ -42,6 +44,8 @@ def create_mfile(filename, output, comment=None):
         logger.info('Wrote Matlab-style output to %s' % fh.name)
 
 def create_pfile(filename, output, comment=None):
+    """Create python pickle file
+    """
     import cPickle
     with open(filename, 'w') as fh:
         cPickle.dump(output, fh)

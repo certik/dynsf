@@ -53,7 +53,19 @@ except ImportError:
             raise RuntimeError("yp can only be 1d or 2d")
 
 class averager:
-    # Special purpose averager class
+    """Naive special purpose averager class used in dynsf
+
+    It assists with keeping track on how many data samples
+    have been added to each slot.
+
+    Ex:
+    av = averager(2)
+    av[0] += 10
+    av[1] += 2
+    av[0] += 3
+    av.get_av() ->
+    [6, 3]
+    """
     def __init__(self, N_slots, initial=np.zeros(1)):
         assert(N_slots >= 1)
         self._N = N_slots

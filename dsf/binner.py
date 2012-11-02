@@ -31,7 +31,26 @@ class fixed_bin_averager:
        lineary spaced x values when a possibly large set
        of {y(x)} is given.
 
-       
+    y  ^               *
+       |                        *
+       | * *           *      *
+       |               *     *     **
+       |      *   *        *
+       | *            *              *
+       |    *           * *    *
+       +--------------------------------------->
+                                               x
+
+       |   |   |   |   |   |   |   |   |   |
+       +---+---+---+---+---+---+---+---+---+
+        x1  x2  x3  x4  x5  x6  x7  x8  x9
+
+       9 linearely distributed "bins" / ranges.
+
+       The result will be an array containing,
+       for each bin, the average y-value over the data points
+       having its x-value within the respective bin x-range.
+
     """
     def __init__(self, x_max, x_bins, x_distances, x_min=0.0):
         assert x_max > x_min
