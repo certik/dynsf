@@ -1,21 +1,21 @@
 
-#extra_compile_args = ['-fopenmp']
-#extra_link_args = ['-fopenmp']
-
-# Let local_compiler be None in order to use the default compiler
-#
-#local_compiler = None
-#local_linker = local_compiler
-
-
-# # Example: Explicitly use gcc
-# #
-# local_compiler = 'gcc'
-# extra_compile_args = ['-fPIC', '-fopenmp', '-Ofast', '-march=native', '-std=c99']
-
-# local_linker = local_compiler
-# local_link_shared = ['-shared']
+# extra_compile_args = ['-fopenmp']
 # extra_link_args = ['-fopenmp']
+
+# # Let local_compiler be None in order to use the default compiler
+
+# local_compiler = None
+# local_linker = local_compiler
+
+
+# Example: Explicitly use gcc
+#
+local_compiler = 'gcc'
+extra_compile_args = ['-fPIC', '-fopenmp', '-Ofast', '-march=native', '-std=c99']
+
+local_linker = local_compiler
+local_link_shared = ['-shared']
+extra_link_args = ['-fopenmp']
 
 
 # # Example: Use icc instead of the default compiler
@@ -38,11 +38,11 @@
 # extra_link_args = ['-mp']
 
 
-# Example: Use pgcc to generate GPU-code using OpenACC directives
-#
-local_compiler = 'pgcc'
-extra_compile_args = ['-acc', '-ta=nvidia', '-O4', '-g', '-Minfo=acc', '-fPIC']
+# # Example: Use pgcc to generate GPU-code using OpenACC directives
+# #
+# local_compiler = 'pgcc'
+# extra_compile_args = ['-acc', '-ta=nvidia', '-O4', '-g', '-Minfo=acc', '-fPIC']
 
-local_linker = local_compiler
-local_link_shared = ['-shared']
-extra_link_args = ['-acc']
+# local_linker = local_compiler
+# local_link_shared = ['-shared']
+# extra_link_args = ['-acc']

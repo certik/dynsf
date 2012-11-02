@@ -30,7 +30,7 @@ void rho_k(const RHOPREC x_vec[][3], int N_x,
 
   int x_i, k_i;
   RHOPREC rho_ki_0, rho_ki_1;
-  const RHOPREC factor = (1.0 / sqrt((RHOPREC)N_x));
+  RHOPREC factor = (1.0 / sqrt((RHOPREC)N_x));
   register RHOPREC alpha;
 
 #ifdef _OPENACC
@@ -49,15 +49,15 @@ void rho_k(const RHOPREC x_vec[][3], int N_x,
 
     for(x_i=0; x_i<N_x; x_i++){
       alpha = \
-        x_vec[x_i][0] * k_vec[k_i][0] + 
-        x_vec[x_i][1] * k_vec[k_i][1] + 
+        x_vec[x_i][0] * k_vec[k_i][0] +
+        x_vec[x_i][1] * k_vec[k_i][1] +
         x_vec[x_i][2] * k_vec[k_i][2];
       rho_ki_0 += cos(alpha);
       rho_ki_1 += sin(alpha);
     }
     rho_k[k_i][0] = factor * rho_ki_0;
     rho_k[k_i][1] = factor * rho_ki_1;
-  }   
+  }
 
 #ifdef _OPENACC
   }
@@ -73,7 +73,7 @@ void rho_j_k(const RHOPREC x_vec[][3], const RHOPREC v_vec[][3], int N_x,
   int x_i, k_i;
   RHOPREC rho_ki_0, rho_ki_1;
   RHOPREC j_ki_0, j_ki_1, j_ki_2, j_ki_3, j_ki_4, j_ki_5;
-  const RHOPREC factor = (1.0 / sqrt((RHOPREC)N_x));
+  RHOPREC factor = (1.0 / sqrt((RHOPREC)N_x));
   register RHOPREC alpha, ca, sa;
 
 #ifdef _OPENACC
@@ -115,7 +115,7 @@ void rho_j_k(const RHOPREC x_vec[][3], const RHOPREC v_vec[][3], int N_x,
       j_ki_5 += sa * v_vec[x_i][2];
     }
     rho_k[k_i][0] = factor * rho_ki_0;
-    rho_k[k_i][1] = factor * rho_ki_1; 
+    rho_k[k_i][1] = factor * rho_ki_1;
     j_k[k_i][0] = factor * j_ki_0;
     j_k[k_i][1] = factor * j_ki_1;
     j_k[k_i][2] = factor * j_ki_2;
