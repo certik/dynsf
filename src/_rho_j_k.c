@@ -36,12 +36,10 @@ void rho_k(const RHOPREC x_vec[][3], int N_x,
 #ifdef _OPENACC
 #pragma acc kernels copyin(x_vec[0:N_x][0:3],k_vec[0:N_k][0:3]) copyout(rho_k[0:N_k][0:2])
   {
-#endif
-
+#else /* As implemented here, OpenMP and OpenACC likely doesn't play together */
 #pragma omp parallel for \
-  shared(rho_k, x_vec, k_vec, factor) \
-  private(k_i, x_i, alpha, rho_ki_0, rho_ki_1)
-
+  shared(rho_k, x_vec, k_vec, factor) private(k_i, x_i, alpha, rho_ki_0, rho_ki_1)
+#endif
   for(k_i=0; k_i<N_k; k_i++){
 
     rho_ki_0 = 0.0;
