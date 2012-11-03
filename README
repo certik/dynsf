@@ -1,0 +1,86 @@
+
+
+=======
+ Dynsf
+=======
+
+Dynsf is a simple tool for calculaton partial dynamical structure factors
+from molecular dynamics (MD) simulations.
+
+The main input consists of a trajectory output from a MD simulation;
+i.e. a file containing snapshots of the particle coordinates, and
+optionally velocities, for consecutively and equally spaced points
+in (simulation) time.
+
+Dynsf can by itself read and parse standard lammpsdump-style trajectories.
+If libgmx (gromacs lib) is available, dynsf can use it to read
+gromacs xtc-files.
+If VMD is available, dynsf can use VMD's molfileplugin to read other
+formats (with some limitations) as well.
+
+Dynsf is controlled via command line options, provided at command
+invokation. The main difficulties in using dynsf lies in deciding which
+particular values to use.
+
+Output can be written in standard matlab/octave-stype .m-files, and/or as
+python pickle-files.
+
+The most time critical part of the processing consists of the calculation
+of the fourier transformed densities, rho(k). This part is implemented in
+C, and is greatly improved by parallelizing it using OpenMP or OpenACC.
+The time correlation calculation is performed explicitly in python (using
+numpy arrays), and is parallelized with python threads (which works rather
+well thanks to numpy releasing the python GIL).
+
+
+
+================================
+ Various implementation details
+================================
+
+
+ General overview
+ ----------------
+
+Trajectories are read frame (single MD timestep) by frame by a
+trajectory_reader, which is an iterable object. Each frame produced by the
+trajectory_reader is represented as a dict object containing particle
+positions etc.
+
+The trajectory_iterator is then wrapped in a "window generator", producing
+a sliding window of frames through the trajectory. The size of the window
+is decided by the requested number of time frames to consider for time
+correlation. The argument --nt determines the width (time length) of the
+window, and the argument --stride determines how many frames to move the
+window between two consecutive windows.
+
+Each frame in a window will be processed to have its particle positions
+(and velocities) split info particle types/species, and for each particle
+type the corresponding fourier transform of its density (and current) will
+be calculated.
+Information about which particle belongs to which type/species comes either
+from the trajectory file (if available), or from a separate index file
+(gromacs ndx-style).
+
+For each window, time correlations ranging from delta_t=0 (the "static"
+correlation) to delta_t=<window width> is calculated.
+The time correlations are averaged over all windows considered.
+
+Each of the averaged time correlations are then further averaged in the
+reciprocal domain by mapping it into --k-bins values ranging from 0
+to --k-max (for an isotropic media, only the absolute of the k-vector is
+of interest).
+
+For each output format choosen, output is written.
+
+
+ Calls to external libraries
+ ---------------------------
+
+All call to external libraries are used using ctypes.
+The main reason for choosing ctypes over e.g. swig/weave/f2py/... is
+portability. Ctypes is included with python, and uses libffi so there is
+no need for a compiler. A drawback is that lots of API stuff needs to be
+explicitly set up in python code.
+If there is a change in the API to the external libraries used, some part
+of the dynsf code need to be modified.
