@@ -34,6 +34,31 @@ well thanks to numpy releasing the python GIL).
 
 
 
+==============
+ Installation
+==============
+
+
+ Requirements
+ ------------
+
+Python 2.6/2.7, numpy, and a C99-complient C-compiler.
+
+
+ Quickstart
+ ----------
+
+1. Decide a installation prefix (e.g. $HOME/opt/ or such)
+2. Install, "python ./setup.py install --prefix=$HOME/opt"
+3. Set PYTHONPATH to include newly installed site-packages directory
+   (e.g. $HOME/opt/lib64/python2.7/site-packages)
+4. Set PATH to include newly installed bin directory
+   (e.g. $HOME/opt/bin)
+
+
+ Tune
+
+
 ================================
  Various implementation details
 ================================
