@@ -42,3 +42,15 @@ ${DYNSF} -f "$TRAJECTORY" -n "$INDEX" \
     --om=output$((index)).m \
     --op=output$((index++)).pickle
 
+
+# gzipped lammps "custom dump", containing particle positions
+TRAJECTORY="${DATADIR}/positions.lammpstrj.gz"
+# group particles into species (by indices)
+INDEX="${DATADIR}/system.ndx"
+
+${DYNSF} -f "$TRAJECTORY" -n "$INDEX" \
+    --k-max=$K_MAX --k-bins=$K_BINS \
+    --nt=$TIME_WINDOW --max-frames=$MAX_FRAMES \
+    --calculate-self \
+    --om=output$((index)).m \
+    --op=output$((index++)).pickle

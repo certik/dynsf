@@ -514,7 +514,7 @@ if __name__ == '__main__':
             _, S_s_k_w = zip(*[filon.fourier_cos(F, delta_t) for F in F_s_k_t])
             output += [(S_s_k_w[i], 'S_s_k_w_%i' % i,
                         'Self part of partial dynamical structure factor [omega, k]')
-                       for i,_ in i_N_particle_categories]
+                       for i,_ in enumerate(particle_types)]
 
     comment = 'Command line: ' + ' '.join(sys.argv)
     for fn, writer in ((options.om, partial(create_mfile, comment=comment)),
